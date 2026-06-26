@@ -1,6 +1,6 @@
 # Relay API Contract
 
-Base URL: `http://<relay-host>:<port>/api/v1` — `<relay-host>` is whichever of your configured Local/Remote addresses the app resolved to (see `docs/architecture.md`).
+Base URL: `http://<relay-host>:<port>/api/v1` — `<relay-host>` is whichever of your configured Local/Remote addresses the app resolved to (see `developer-docs/architecture.md`).
 
 Auth: every endpoint except `/health` requires `Authorization: Bearer <RELAY_API_TOKEN>`. Missing/invalid token → `401`.
 

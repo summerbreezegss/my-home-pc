@@ -2,19 +2,19 @@
 
 ## Problem
 
-Turn on a Windows 11 PC from anywhere in the world, even when it's fully shut down (S5), using an Android app — without being tied to any one specific remote-access technology.
+Turn on a Windows 11 PC from anywhere in the world, even when it's fully shut down (S5), using the MyHomePC app — without being tied to any one specific remote-access technology.
 
 A standard Wake-on-LAN (WoL) magic packet is a LAN-local broadcast — it can't be routed across the internet to a specific powered-off machine. Something that is (a) always on, (b) physically on the same LAN as the PC, and (c) reachable from anywhere is required to bridge the gap.
 
 ## Components
 
 ```
-[Android App] --HTTPS+token--> [Relay: Docker, host network] --LAN broadcast--> [PC NIC, wakes from S5]
+[MyHomePC App] --HTTPS+token--> [Relay: Docker, host network] --LAN broadcast--> [PC NIC, wakes from S5]
    Kotlin/Compose                  FastAPI (Python)                  |
                                                                       `--LAN HTTP+token--> [PC Agent: Windows Service]
 ```
 
-- **Android app** (`my-home-pc-app/`) — Kotlin + Jetpack Compose. The user-facing client. Talks only to the relay, never directly to the PC.
+- **MyHomePC app** (`my-home-pc-app/`) — Kotlin + Jetpack Compose. The user-facing client. Talks only to the relay, never directly to the PC.
 - **Relay** (`my-home-pc-docker-relay/`) — Python/FastAPI, runs in a Docker container on an always-on device on the same LAN as the target PC (a Synology NAS in this project's reference deployment, but any always-on Docker host on that LAN works). The only component capable of sending a WoL broadcast, because it's the only piece that's both always-on and physically on the PC's LAN segment.
 - **PC Agent** (`my-home-pc-agent/`) — a small .NET 8 Windows Service that runs on the target PC itself, entirely optional. Only needed for Shutdown/Restart, since powering a PC off or restarting it requires actively running code on that PC — nothing about Wake-on-LAN can do this. LAN-only by design: it never talks to the internet directly, doesn't need its own Tailscale (or other remote-access) presence, and is reached only by the relay over the LAN, gated by its own `AGENT_SHARED_SECRET` (separate from the app-facing `RELAY_API_TOKEN`).
 
@@ -47,10 +47,11 @@ Wake-on-LAN is one-directional and unacknowledged (UDP, no response from the PC)
 This started as a personal hobby project for one user, not a multi-tenant service — the design favors simplicity over enterprise-grade hardening, but isn't wide open:
 
 - **Transport**: plain HTTP between phone and relay, no extra TLS layer in this project's own code. This is a deliberate simplification — it assumes whatever makes the Remote address reachable from the internet (a VPN mesh, etc.) is already providing real transport encryption between your phone and your home network. If you expose the relay's Remote address via something that *doesn't* already encrypt the connection (e.g. raw port-forwarding with no VPN), add TLS in front of it yourself.
+- **What a VPN mesh provider (e.g. Tailscale) can and can't see**: worth being precise here, since "no cloud service" is an overstatement for any VPN-mesh-based setup. A provider like Tailscale operates its own coordination servers to handle device auth and key exchange — that part genuinely is a cloud service you're depending on. The actual data (every relay request/response, every wake/status/shutdown command) travels inside a WireGuard tunnel end-to-end encrypted between your own devices; the provider's servers can't decrypt it. Most of the time that traffic goes peer-to-peer directly between your devices and never touches the provider's infrastructure at all — but if a direct path isn't possible (restrictive NAT, etc.), it can fall back through the provider's relay servers, still fully encrypted. Net effect: the provider can see *that* your devices are online and talking, but not *what* they're saying — and this project's own code never depends on any specific provider either way.
 - **App layer**: every relay endpoint except `/health` requires `Authorization: Bearer <RELAY_API_TOKEN>`, compared with a constant-time check (`hmac.compare_digest`) to avoid timing side-channels.
 - **Token storage**: the app encrypts the token with a key held in the Android Keystore (AES/GCM, never leaves the device's secure hardware), entered once via the Settings screen — never hardcoded in app source.
 - **PC Agent layer**: the agent's `/shutdown` and `/restart` (but not `/health`) require their own `Authorization: Bearer <AGENT_SHARED_SECRET>`, deliberately a *different* secret from `RELAY_API_TOKEN` — a compromised app token alone can't reach the agent, only a compromised relay can. The agent never listens on anything but the LAN interface, so it has no internet-facing attack surface of its own; reaching it at all already requires having reached the relay first. Shutdown/Restart were originally deferred over exactly this kind of remote-power-control risk; revisiting that decision didn't relax these defaults (confirmation dialogs in the app, separate secret, LAN-only agent) — it just decided the tradeoff was acceptable.
 
 ## Multi-device extensibility
 
-The relay's device registry (`my-home-pc-docker-relay/devices.yaml`, gitignored — see `my-home-pc-docker-relay/devices.example.yaml` for the template) is a list from day one, and the REST API is scoped under `/devices/{id}/...`. Adding a second PC is a config-file edit and a container restart, not a schema or app code change — the Android app's device-list screen already renders a list. A device's `capabilities` list controls which buttons the app shows for it — `shutdown`/`restart` should only be added once `my-home-pc-agent` is actually installed and verified working on that PC, not before.
+The relay's device registry (`my-home-pc-docker-relay/devices.yaml`, gitignored — see `my-home-pc-docker-relay/devices.example.yaml` for the template) is a list from day one, and the REST API is scoped under `/devices/{id}/...`. Adding a second PC is a config-file edit and a container restart, not a schema or app code change — the MyHomePC app's device-list screen already renders a list. A device's `capabilities` list controls which buttons the app shows for it — `shutdown`/`restart` should only be added once `my-home-pc-agent` is actually installed and verified working on that PC, not before.
