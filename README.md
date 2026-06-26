@@ -1,48 +1,46 @@
 # MyHomePC
 
-Wake, restart, or shut down your home Windows PC from anywhere in the world, straight from your phone — no port forwarding, no third-party cloud relay, and not locked to any one remote-access technology.
+Wake up, restart, or shut down my home Windows PC from anywhere in the world — right from my phone. That was the whole goal, and once it's set up, that's really all it is: open the app, tap a button, done.
 
-## What this is
+I started this because I travel and kept wanting to turn my PC on remotely without buying extra hardware for it. I looked at smart plugs and ESP32-based solutions first and ruled them out — they're physical things I'd have to buy, wire up, and maintain, for a problem that's really just software. I also didn't want to hand a vendor's cloud app direct access to my home network just to press a power button. So I built this around two things I cared about more than convenience features: **simplicity** and **privacy**. The PC-side install for Restart/Shutdown is a single double-click, not a command line — and the relay and PC agent that actually carry out every command are code I run myself, on hardware I already own, so no company's server ever needs to be trusted with my home network.
 
-This started from a simple, personal problem: traveling away from home and wanting to turn on (and now restart/shut down) a desktop PC, without buying new hardware (smart plugs, ESP32 boards) and without trusting a vendor's cloud service with access to a home network. The answer was to reuse infrastructure already in place — a Synology NAS that's always on, and a personal VPN mesh (Tailscale) already connecting that NAS, the PC, and a phone — and build the smallest possible system on top of it.
-
-The day-to-day experience is meant to be effortless even though the underlying system has a few moving parts:
-
-- **The Android app** is a normal app: open it, tap Wake/Restart/Shutdown, done. No Tailscale-specific knowledge needed — the app just calls it "Local" or "Remote" and figures out which one to use automatically.
-- **The PC Agent** (only needed for Restart/Shutdown) installs with a single double-click — no command line, no manually editing config files. See [Getting started](#getting-started) below.
-- Adding a second PC later is a one-line config change, not a rewrite.
+The one piece I bring from outside is a secure connection method of my own choosing. I already had Tailscale (a VPN mesh) running on my NAS, PC, and phone, so that's what I used — but I deliberately didn't bake Tailscale into the app or relay's code. Everywhere the app talks about reaching your PC remotely, it just says "Local" or "Remote," never "Tailscale." I wanted the option to switch VPN providers later, or for someone else using this to bring their own, without that being a rewrite.
 
 ## Why this instead of a typical Wake-on-LAN app
 
-Most Wake-on-LAN apps (WolOn, and the various "Wake on LAN" / "Wake PC" apps for iOS) work great on your home Wi-Fi, but remote (over-the-internet) use generally means one of two things, by their own documentation: configure your router to **forward a port from the public internet straight to your LAN**, or set up your own VPN. MyHomePC always takes the second path — and goes further with it:
+Most Wake-on-LAN apps are happy to stop at "turn it on." I wanted that too, but I also wanted Restart and Shutdown, and looking at how other apps handle that, it's almost always treated as a power-user feature — router port-forwarding rules, dynamic DNS, or writing your own SSH commands to unlock a "Pro" tier. I went the other way: the parts a normal person actually touches are designed to need zero technical background.
 
 | | Typical Wake-on-LAN apps | MyHomePC |
 |---|---|---|
-| Reaching your PC remotely | Often requires forwarding a UDP/TCP port from your router's public IP into your LAN | Always over a VPN mesh you control (Tailscale in this project's setup) — **no inbound port is ever opened on your router** |
-| Checking if the PC is online | Since the wake packet itself can't be acknowledged, some apps need a *second* forwarded port just for a connectivity check | The relay checks status itself, from inside your LAN — your PC is never directly reachable from the internet, not even over the VPN |
-| Restart / Shutdown | Rarely offered; where it exists (e.g. as a paid/"Pro" SSH feature) it's often general remote command execution | A small purpose-built agent that exposes exactly two actions — shutdown, restart — behind its own separate secret, distinct from the app's relay token. Nothing resembling general remote code execution exists anywhere in this system |
-| Trust model | A closed-source app you install and trust | Fully self-hosted and source-available: the relay and agent are code you can read, run, and audit yourself, on your own NAS and PC — no vendor server ever sees your network |
+| Setting up remote access | Often means configuring port-forwarding on your router yourself — router-specific menus, port numbers, sometimes dynamic DNS too, and an open inbound port on your home network either way | A VPN mesh app you already trust (I use Tailscale) — no router configuration, no open inbound ports, ever |
+| Restart / Shutdown | Rarely offered at all; where it exists, it's often an advanced/"Pro" feature that expects you to write your own SSH commands | Built in from the start. The one-time PC-side setup is a single double-click — no command line, no config files to hand-edit |
+| Who can read your commands | Depends on the app and its vendor | End-to-end encrypted between your own devices; the relay and agent that actually carry out commands are code you run yourself, not a vendor's server |
+| Getting it right the first time | Usually trial-and-error with router settings | A short guided checklist gets the one genuinely technical step (BIOS/Windows Wake-on-LAN settings) right once, and you're done |
 
-The short version: the security posture isn't an afterthought bolted onto a wake button — having zero open inbound ports and a narrowly-scoped, separately-authenticated power-control agent were both deliberate design decisions from the start (see [`docs/architecture.md`](docs/architecture.md#security-model) for the full reasoning).
+A decision I went back and forth on: I originally left Restart/Shutdown out entirely, on purpose — "I don't want a way for anyone to turn my machine off remotely" was the reasoning, since I already had Moonlight for that when I actually needed it. I came back to it later because I wanted the feature set to be complete, not because I'd changed my mind about the risk. So I kept every safety decision from the original plan rather than loosening anything: a confirmation dialog before either action fires, a separate secret for the PC agent that's distinct from the app's own token (so a leaked app token alone still can't reach it), and the agent itself never listens on anything but the LAN — it has no presence on the internet or on Tailscale at all, full stop.
+
+I also thought about just adding Shutdown/Restart endpoints straight onto the relay, since it already runs on my NAS. That doesn't work, though — the relay lives on the NAS, not the PC, and shutting a machine down requires code actually running on that machine. That's the entire reason the PC Agent exists as its own small Windows Service: it's the one piece of this project that has to live where the PC itself lives.
+
+The short version: this isn't a power-user tool with a friendly coat of paint over it — the day-to-day experience was designed from the start to need no technical knowledge at all (see [Getting started](#getting-started) below), while still being honest about what's actually happening underneath (see [`developer-docs/architecture.md`](developer-docs/architecture.md#security-model) for the full technical reasoning, including exactly what your chosen VPN provider can and can't see).
 
 ## Getting started
 
 ### 1. Confirm Wake-on-LAN works on the target PC
 
-Follow [`docs/windows-wol-setup-checklist.md`](docs/windows-wol-setup-checklist.md) (BIOS settings, Windows power options, NIC driver settings). Confirm it actually works with any existing tool before touching the rest of this project — it's the one genuinely hardware-dependent step, and isolating it first means you're never debugging your own code and a BIOS setting at the same time.
+Follow [`developer-docs/windows-wol-setup-checklist.md`](developer-docs/windows-wol-setup-checklist.md) (BIOS settings, Windows power options, NIC driver settings). Confirm it actually works with any existing tool before touching the rest of this project — it's the one genuinely hardware-dependent step, and isolating it first means you're never debugging your own code and a BIOS setting at the same time.
 
 ### 2. Deploy the relay
 
-The relay is the always-on bridge between your phone and your PC's LAN. It needs to run on a device that's always on and on the same network as the PC — a NAS is the natural choice if you have one.
+The relay is the always-on bridge between your phone and your PC's LAN. It needs to run on a device that's always on and on the same network as the PC — a NAS is the natural choice if you have one (it's what I use).
 
 1. Copy `my-home-pc-docker-relay/devices.example.yaml` → `my-home-pc-docker-relay/devices.yaml`, and `.env.example` → `.env`. Fill in your PC's MAC/IP and a generated token.
 2. Deploy `my-home-pc-docker-relay/` to your Docker host with **host networking** enabled (required for the Wake-on-LAN broadcast to leave the container) — see [`my-home-pc-docker-relay/README.md`](my-home-pc-docker-relay/README.md) for exact steps.
 
 ### 3. Set up remote access to the relay
 
-Decide how you'll reach the relay from outside your home network — a VPN mesh (Tailscale/WireGuard) is what this project itself uses and recommends, for the reasons above. Confirm it works (e.g. `curl` the relay's `/health` endpoint from your phone's cellular connection) before moving on.
+Decide how you'll reach the relay from outside your home network — a VPN mesh (Tailscale/WireGuard) is what I use and recommend, for the reasons above. Confirm it works (e.g. `curl` the relay's `/health` endpoint from your phone's cellular connection) before moving on.
 
-### 4. Install the Android app
+### 4. Install the MyHomePC app
 
 Build/install `my-home-pc-app/` (`cd my-home-pc-app && ./gradlew installDebug` with a device connected, or open the project in Android Studio). On first launch, open Settings and enter: a **Local** host (your relay's LAN IP) and a **Remote** host (whatever you set up in step 3) — same port and token either way. Test Connection will confirm which path it's using.
 
@@ -64,14 +62,14 @@ See [`my-home-pc-agent/README.md`](my-home-pc-agent/README.md) for the full deta
 
 ## Components & architecture (for developers)
 
-See [`docs/architecture.md`](docs/architecture.md) for how the pieces fit together and why, and [`docs/api-contract.md`](docs/api-contract.md) for the full REST API.
+See [`developer-docs/architecture.md`](developer-docs/architecture.md) for how the pieces fit together and why, and [`developer-docs/api-contract.md`](developer-docs/api-contract.md) for the full REST API.
 
 | Path | What | Runs on |
 |---|---|---|
 | [`my-home-pc-docker-relay/`](my-home-pc-docker-relay/) | FastAPI service that sends Wake-on-LAN packets, checks PC status, and forwards Shutdown/Restart to the PC Agent | Any always-on Docker host on the target PC's LAN |
 | [`my-home-pc-agent/`](my-home-pc-agent/) | .NET 8 Windows Service (plus a self-contained installer/uninstaller) that performs Shutdown/Restart — optional | The target PC itself |
-| [`my-home-pc-app/`](my-home-pc-app/) | Kotlin + Jetpack Compose Android app | Your phone |
+| [`my-home-pc-app/`](my-home-pc-app/) | The MyHomePC app — Kotlin + Jetpack Compose | Your phone |
 
-The Android app needs **no code changes** to adapt to your own setup — all configuration (relay address, port, token) happens at runtime through its Settings screen. Only the relay needs per-deployment setup, since it's the piece that has to know about your specific PC.
+The MyHomePC app needs **no code changes** to adapt to your own setup — all configuration (relay address, port, token) happens at runtime through its Settings screen. Only the relay needs per-deployment setup, since it's the piece that has to know about your specific PC.
 
-Full phased build/verification notes from this project's own development are in `docs/`.
+Full phased build/verification notes from this project's own development are in `developer-docs/`.

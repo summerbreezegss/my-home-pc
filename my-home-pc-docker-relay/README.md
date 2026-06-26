@@ -1,6 +1,6 @@
 # MyHomePC Docker Relay
 
-FastAPI service that sends Wake-on-LAN packets, checks PC status, and forwards Shutdown/Restart to [`my-home-pc-agent`](../my-home-pc-agent/) when a device's `capabilities` list permits it. This is the Docker-deployed package — it needs to run as a container on an always-on Docker host on the **same LAN** as the target PC. See [`../docs/architecture.md`](../docs/architecture.md) for why.
+FastAPI service that sends Wake-on-LAN packets, checks PC status, and forwards Shutdown/Restart to [`my-home-pc-agent`](../my-home-pc-agent/) when a device's `capabilities` list permits it. This is the Docker-deployed package — it needs to run as a container on an always-on Docker host on the **same LAN** as the target PC. See [`../developer-docs/architecture.md`](../developer-docs/architecture.md) for why.
 
 ## First-time setup
 
@@ -20,7 +20,7 @@ pip install -r requirements-dev.txt
 python -m uvicorn app.main:app --reload --port 8675
 ```
 
-Browse to `http://localhost:8675/docs` for the interactive Swagger UI — useful for manually testing `/wake` and `/status` before the Android app exists.
+Browse to `http://localhost:8675/docs` for the interactive Swagger UI — useful for manually testing `/wake` and `/status` before the MyHomePC app exists.
 
 ## Tests
 
