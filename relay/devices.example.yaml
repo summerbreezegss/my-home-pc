@@ -1,0 +1,8 @@
+devices:
+  - id: pc-main
+    name: "My Desktop"
+    mac: "AA:BB:CC:DD:EE:FF"      # the PC's NIC MAC address (Windows: ipconfig /all)
+    lan_ip: "192.168.1.50"        # the PC's LAN IP - set a DHCP reservation so this never drifts
+    broadcast: "192.168.1.255"    # your LAN's broadcast address (usually your subnet + .255)
+    wol_ports: [9, 7]
+    capabilities: ["wake", "status"]
