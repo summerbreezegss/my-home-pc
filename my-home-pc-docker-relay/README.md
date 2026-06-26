@@ -17,10 +17,10 @@ copy .env.example .env                   # then set a real RELAY_API_TOKEN
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements-dev.txt
-python -m uvicorn app.main:app --reload --port 8080
+python -m uvicorn app.main:app --reload --port 8675
 ```
 
-Browse to `http://localhost:8080/docs` for the interactive Swagger UI — useful for manually testing `/wake` and `/status` before the Android app exists.
+Browse to `http://localhost:8675/docs` for the interactive Swagger UI — useful for manually testing `/wake` and `/status` before the Android app exists.
 
 ## Tests
 
@@ -37,6 +37,6 @@ python -m pytest
 
 ## Testing it works
 
-- From a device on the same LAN: `curl http://<relay-lan-ip>:8080/api/v1/health`
-- From a device away from home, over whatever remote-access method you've set up: `curl http://<relay-remote-address>:8080/api/v1/health`
-- Wake: `curl -X POST http://<relay-address>:8080/api/v1/devices/pc-main/wake -H "Authorization: Bearer <token>"`
+- From a device on the same LAN: `curl http://<relay-lan-ip>:8675/api/v1/health`
+- From a device away from home, over whatever remote-access method you've set up: `curl http://<relay-remote-address>:8675/api/v1/health`
+- Wake: `curl -X POST http://<relay-address>:8675/api/v1/devices/pc-main/wake -H "Authorization: Bearer <token>"`
