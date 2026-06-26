@@ -1,6 +1,6 @@
-# Relay
+# MyHomePC Docker Relay
 
-FastAPI service that sends Wake-on-LAN packets and checks PC status. Needs to run on an always-on Docker host on the **same LAN** as the target PC — see [`../docs/architecture.md`](../docs/architecture.md) for why.
+FastAPI service that sends Wake-on-LAN packets and checks PC status. This is the Docker-deployed package — it needs to run as a container on an always-on Docker host on the **same LAN** as the target PC. See [`../docs/architecture.md`](../docs/architecture.md) for why.
 
 ## First-time setup
 
@@ -30,7 +30,7 @@ python -m pytest
 
 ## Deploy (Docker, host networking required)
 
-1. Copy the `relay/` folder (with your filled-in `devices.yaml` and `.env`) to wherever it'll run.
+1. Copy the `my-home-pc-docker-relay/` folder (with your filled-in `devices.yaml` and `.env`) to wherever it'll run.
 2. Build and run with **host networking** — e.g. via `docker-compose.yml`'s `network_mode: host`, or your platform's equivalent (on Synology, Container Manager → Project, or "Use the same network as Docker Host" when creating a container manually).
 3. Confirm the container's network mode actually is host: `docker inspect <container> --format '{{.HostConfig.NetworkMode}}'` should print `host`.
 4. If there's a firewall on the Docker host itself (e.g. DSM's Control Panel → Security → Firewall), add an explicit allow rule for the relay's port — host networking bypasses Docker's own NAT, but not the host's own firewall.

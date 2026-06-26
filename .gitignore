@@ -2,8 +2,8 @@
 .env
 *.env
 !.env.example
-relay/devices.yaml
-!relay/devices.example.yaml
+my-home-pc-docker-relay/devices.yaml
+!my-home-pc-docker-relay/devices.example.yaml
 
 # Python
 __pycache__/
@@ -18,9 +18,9 @@ obj/
 
 # Android / Gradle
 .gradle/
-android-app/.idea/
-android-app/local.properties
-android-app/**/build/
+my-home-pc-app/.idea/
+my-home-pc-app/local.properties
+my-home-pc-app/**/build/
 *.iml
 .cxx/
 

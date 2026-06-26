@@ -13,8 +13,8 @@ A standard Wake-on-LAN (WoL) magic packet is a LAN-local broadcast — it can't 
    Kotlin/Compose                  FastAPI (Python)
 ```
 
-- **Android app** (`android-app/`) — Kotlin + Jetpack Compose. The user-facing client. Talks only to the relay, never directly to the PC.
-- **Relay** (`relay/`) — Python/FastAPI, runs in a Docker container on an always-on device on the same LAN as the target PC (a Synology NAS in this project's reference deployment, but any always-on Docker host on that LAN works). The only component capable of sending a WoL broadcast, because it's the only piece that's both always-on and physically on the PC's LAN segment.
+- **Android app** (`my-home-pc-app/`) — Kotlin + Jetpack Compose. The user-facing client. Talks only to the relay, never directly to the PC.
+- **Relay** (`my-home-pc-docker-relay/`) — Python/FastAPI, runs in a Docker container on an always-on device on the same LAN as the target PC (a Synology NAS in this project's reference deployment, but any always-on Docker host on that LAN works). The only component capable of sending a WoL broadcast, because it's the only piece that's both always-on and physically on the PC's LAN segment.
 
 ## Reaching the relay from anywhere: Local + Remote, not just one path
 
@@ -24,7 +24,7 @@ The relay is configured with **two possible addresses** — a Local one (typical
 - Away from home, it falls back to whatever Remote address you've configured.
 - The app and relay don't care *how* the Remote address is made reachable — that's entirely up to how you've set up your own network. This project's own reference deployment uses Tailscale for that part, but nothing in the app or relay is Tailscale-specific.
 
-See `RelayConnectionResolver` (`android-app/app/src/main/java/com/pcwake/app/data/RelayConnectionResolver.kt`) for the fallback logic.
+See `RelayConnectionResolver` (`my-home-pc-app/app/src/main/java/com/pcwake/app/data/RelayConnectionResolver.kt`) for the fallback logic.
 
 ## Data flow per feature
 
@@ -49,7 +49,7 @@ This started as a personal hobby project for one user, not a multi-tenant servic
 
 ## Multi-device extensibility
 
-The relay's device registry (`relay/devices.yaml`, gitignored — see `relay/devices.example.yaml` for the template) is a list from day one, and the REST API is scoped under `/devices/{id}/...`. Adding a second PC is a config-file edit and a container restart, not a schema or app code change — the Android app's device-list screen already renders a list.
+The relay's device registry (`my-home-pc-docker-relay/devices.yaml`, gitignored — see `my-home-pc-docker-relay/devices.example.yaml` for the template) is a list from day one, and the REST API is scoped under `/devices/{id}/...`. Adding a second PC is a config-file edit and a container restart, not a schema or app code change — the Android app's device-list screen already renders a list.
 
 ## What's deliberately not built
 
