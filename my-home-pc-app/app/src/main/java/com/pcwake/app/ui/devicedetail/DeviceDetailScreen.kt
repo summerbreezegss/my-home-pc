@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -56,12 +58,18 @@ private const val POLL_MAX_ATTEMPTS = 12
 private val ACTION_BUTTON_SIZE = 72.dp
 private val ACTION_ICON_SIZE = 28.dp
 
-private sealed class WakeUiState {
-    object Idle : WakeUiState()
-    object Sending : WakeUiState()
-    data class Polling(val attempt: Int, val max: Int) : WakeUiState()
-    object Done : WakeUiState()
-    data class Error(val message: String) : WakeUiState()
+private enum class PowerAction(val label: String, val verbPhrase: String, val targetOnline: Boolean) {
+    WAKE("Wake my PC", "wake", targetOnline = true),
+    RESTART("Restart", "restart", targetOnline = false),
+    SHUTDOWN("Shutdown", "shut down", targetOnline = false)
+}
+
+private sealed class DeviceActionState {
+    object Idle : DeviceActionState()
+    data class Sending(val action: PowerAction) : DeviceActionState()
+    data class Polling(val action: PowerAction, val attempt: Int, val max: Int) : DeviceActionState()
+    data class Done(val action: PowerAction, val reachedTarget: Boolean) : DeviceActionState()
+    data class Error(val action: PowerAction, val message: String) : DeviceActionState()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,7 +87,9 @@ fun DeviceDetailScreen(
     var api by remember { mutableStateOf<RelayApi?>(null) }
     var connectionLabel by remember { mutableStateOf<String?>(null) }
     var online by remember { mutableStateOf<Boolean?>(null) }
-    var wakeState by remember { mutableStateOf<WakeUiState>(WakeUiState.Idle) }
+    var capabilities by remember { mutableStateOf<List<String>>(emptyList()) }
+    var actionState by remember { mutableStateOf<DeviceActionState>(DeviceActionState.Idle) }
+    var pendingConfirmation by remember { mutableStateOf<PowerAction?>(null) }
 
     suspend fun refreshStatus() {
         val currentApi = api ?: return
@@ -96,6 +106,36 @@ fun DeviceDetailScreen(
         api = connection.api
         connectionLabel = connection.displayName
         refreshStatus()
+        try {
+            capabilities = connection.api.listDevices(authHeader).devices
+                .firstOrNull { it.id == deviceId }?.capabilities ?: emptyList()
+        } catch (e: Exception) {
+            // leave previously known capabilities on a transient failure
+        }
+    }
+
+    fun performAction(action: PowerAction) {
+        val currentApi = api ?: return
+        scope.launch {
+            actionState = DeviceActionState.Sending(action)
+            try {
+                when (action) {
+                    PowerAction.WAKE -> currentApi.wake(deviceId, authHeader)
+                    PowerAction.RESTART -> currentApi.restart(deviceId, authHeader)
+                    PowerAction.SHUTDOWN -> currentApi.shutdown(deviceId, authHeader)
+                }
+                actionState = DeviceActionState.Polling(action, attempt = 0, max = POLL_MAX_ATTEMPTS)
+                for (i in 1..POLL_MAX_ATTEMPTS) {
+                    delay(POLL_INTERVAL_MS)
+                    refreshStatus()
+                    actionState = DeviceActionState.Polling(action, attempt = i, max = POLL_MAX_ATTEMPTS)
+                    if (online == action.targetOnline) break
+                }
+                actionState = DeviceActionState.Done(action, reachedTarget = online == action.targetOnline)
+            } catch (e: Exception) {
+                actionState = DeviceActionState.Error(action, e.message ?: "Failed to send ${action.label}")
+            }
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -107,6 +147,25 @@ fun DeviceDetailScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val isBusy = actionState is DeviceActionState.Sending || actionState is DeviceActionState.Polling
+
+    pendingConfirmation?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pendingConfirmation = null },
+            title = { Text("${action.label} $deviceName?") },
+            text = { Text("This will ${action.verbPhrase} the PC now.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingConfirmation = null
+                    performAction(action)
+                }) { Text(action.label) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingConfirmation = null }) { Text("Cancel") }
+            }
+        )
     }
 
     Scaffold(
@@ -153,43 +212,40 @@ fun DeviceDetailScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 PowerActionButton(
                     icon = painterResource(R.drawable.ic_power),
-                    label = "Wake",
-                    onClick = {
-                        scope.launch {
-                            val currentApi = api ?: return@launch
-                            wakeState = WakeUiState.Sending
-                            try {
-                                currentApi.wake(deviceId, authHeader)
-                                wakeState = WakeUiState.Polling(attempt = 0, max = POLL_MAX_ATTEMPTS)
-                                for (i in 1..POLL_MAX_ATTEMPTS) {
-                                    delay(POLL_INTERVAL_MS)
-                                    refreshStatus()
-                                    wakeState = WakeUiState.Polling(attempt = i, max = POLL_MAX_ATTEMPTS)
-                                    if (online == true) break
-                                }
-                                wakeState = WakeUiState.Done
-                            } catch (e: Exception) {
-                                wakeState = WakeUiState.Error(e.message ?: "Failed to send wake")
-                            }
-                        }
-                    },
-                    enabled = api != null && wakeState !is WakeUiState.Sending && wakeState !is WakeUiState.Polling
+                    label = PowerAction.WAKE.label,
+                    onClick = { performAction(PowerAction.WAKE) },
+                    enabled = api != null && !isBusy
                 )
-                // Future actions (Sleep, Restart, Shutdown) go here as additional PowerActionButton entries,
-                // gated by the device's capabilities once the PC agent supports them.
+                if (capabilities.contains("restart")) {
+                    PowerActionButton(
+                        icon = painterResource(R.drawable.ic_restart),
+                        label = PowerAction.RESTART.label,
+                        onClick = { pendingConfirmation = PowerAction.RESTART },
+                        enabled = api != null && !isBusy
+                    )
+                }
+                if (capabilities.contains("shutdown")) {
+                    PowerActionButton(
+                        icon = painterResource(R.drawable.ic_power),
+                        label = PowerAction.SHUTDOWN.label,
+                        onClick = { pendingConfirmation = PowerAction.SHUTDOWN },
+                        enabled = api != null && !isBusy,
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                }
             }
 
-            when (val state = wakeState) {
-                is WakeUiState.Sending -> {
+            when (val state = actionState) {
+                is DeviceActionState.Sending -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.size(8.dp))
-                        Text("Wake signal sent")
+                        Text("${state.action.label} signal sent")
                     }
                 }
-                is WakeUiState.Polling -> {
+                is DeviceActionState.Polling -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Wake signal sent")
+                        Text("${state.action.label} signal sent")
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.size(8.dp))
@@ -197,14 +253,18 @@ fun DeviceDetailScreen(
                         }
                     }
                 }
-                is WakeUiState.Done -> {
-                    val message = if (online == true) "✓ PC is now online" else "Still offline — it may need more time, or check setup"
-                    Text(message, color = if (online == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                is DeviceActionState.Done -> {
+                    val message = if (state.reachedTarget) {
+                        if (state.action.targetOnline) "✓ PC is now online" else "✓ PC is now offline"
+                    } else {
+                        "Still ${if (state.action.targetOnline) "offline" else "online"} — it may need more time, or check setup"
+                    }
+                    Text(message, color = if (state.reachedTarget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 }
-                is WakeUiState.Error -> {
+                is DeviceActionState.Error -> {
                     Text("✗ ${state.message}", color = MaterialTheme.colorScheme.error)
                 }
-                WakeUiState.Idle -> {}
+                DeviceActionState.Idle -> {}
             }
         }
     }

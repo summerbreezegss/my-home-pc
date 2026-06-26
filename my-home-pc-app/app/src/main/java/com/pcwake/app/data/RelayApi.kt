@@ -17,4 +17,10 @@ interface RelayApi {
 
     @GET("api/v1/devices/{id}/status")
     suspend fun status(@Path("id") deviceId: String, @Header("Authorization") authHeader: String): StatusResponse
+
+    @POST("api/v1/devices/{id}/shutdown")
+    suspend fun shutdown(@Path("id") deviceId: String, @Header("Authorization") authHeader: String): ActionResponse
+
+    @POST("api/v1/devices/{id}/restart")
+    suspend fun restart(@Path("id") deviceId: String, @Header("Authorization") authHeader: String): ActionResponse
 }

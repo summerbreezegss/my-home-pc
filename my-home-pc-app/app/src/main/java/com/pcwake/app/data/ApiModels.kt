@@ -28,6 +28,13 @@ data class WakeResponse(
     val result: String
 )
 
+data class ActionResponse(
+    val id: String,
+    val action: String,
+    val result: String,
+    @SerializedName("agent_response") val agentResponse: String?
+)
+
 data class StatusResponse(
     val id: String,
     val online: Boolean,

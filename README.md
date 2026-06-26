@@ -8,7 +8,8 @@ See [`docs/architecture.md`](docs/architecture.md) for how the pieces fit togeth
 
 | Path | What | Runs on |
 |---|---|---|
-| [`my-home-pc-docker-relay/`](my-home-pc-docker-relay/) | FastAPI service that sends Wake-on-LAN packets and checks PC status — deploy this as a Docker container | Any always-on Docker host on the target PC's LAN (a Synology NAS in this project's own setup) |
+| [`my-home-pc-docker-relay/`](my-home-pc-docker-relay/) | FastAPI service that sends Wake-on-LAN packets, checks PC status, and forwards Shutdown/Restart to the PC Agent — deploy this as a Docker container | Any always-on Docker host on the target PC's LAN (a Synology NAS in this project's own setup) |
+| [`my-home-pc-agent/`](my-home-pc-agent/) | .NET 8 Windows Service that actually performs Shutdown/Restart — optional, only needed for those two actions | The target PC itself |
 | [`my-home-pc-app/`](my-home-pc-app/) | Kotlin + Compose Android app | Your phone |
 
 The Android app needs **no code changes** to adopt for your own setup — all configuration (relay address, port, token) happens at runtime through the app's Settings screen, stored locally and encrypted on your phone. Only the relay needs per-deployment setup, since it's the piece that has to know about your specific PC.
@@ -18,6 +19,7 @@ The Android app needs **no code changes** to adopt for your own setup — all co
 1. [`docs/windows-wol-setup-checklist.md`](docs/windows-wol-setup-checklist.md) — BIOS + Windows config on the target PC. Do this first and confirm Wake-on-LAN works with some existing tool (even a phone app with a WoL feature) before touching the relay — it's the highest-risk, hardware-dependent step, and isolating it first means you're not debugging your own code and a BIOS setting at the same time.
 2. Copy `my-home-pc-docker-relay/devices.example.yaml` to `my-home-pc-docker-relay/devices.yaml` and `my-home-pc-docker-relay/.env.example` to `my-home-pc-docker-relay/.env`, and fill in your own PC's MAC/IP and a generated token. Deploy `my-home-pc-docker-relay/` to your Docker host (see [`my-home-pc-docker-relay/README.md`](my-home-pc-docker-relay/README.md)) with **host networking** — required for the Wake-on-LAN broadcast to leave the container.
 3. Decide how you'll reach the relay when away from home (a VPN mesh like Tailscale/WireGuard, or your own port-forwarding/DDNS setup) and confirm it works before involving the app.
-4. Build/install `my-home-pc-app/` (`cd my-home-pc-app && ./gradlew installDebug` with a device connected, or open in Android Studio) and configure it via the Settings screen: a Local host (your relay's LAN IP) and a Remote host (whatever you set up in step 3), same port and token either way.
+4. **Optional, for Shutdown/Restart only**: install `my-home-pc-agent/` on the target PC (see its README) and add `agent_port`/`shutdown`/`restart` to that device's entry in `devices.yaml` once it's verified working. Skip this step entirely if you only want Wake.
+5. Build/install `my-home-pc-app/` (`cd my-home-pc-app && ./gradlew installDebug` with a device connected, or open in Android Studio) and configure it via the Settings screen: a Local host (your relay's LAN IP) and a Remote host (whatever you set up in step 3), same port and token either way.
 
 Full phased build/verification notes from this project's own development are in `docs/`.

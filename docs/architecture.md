@@ -10,11 +10,13 @@ A standard Wake-on-LAN (WoL) magic packet is a LAN-local broadcast — it can't 
 
 ```
 [Android App] --HTTPS+token--> [Relay: Docker, host network] --LAN broadcast--> [PC NIC, wakes from S5]
-   Kotlin/Compose                  FastAPI (Python)
+   Kotlin/Compose                  FastAPI (Python)                  |
+                                                                      `--LAN HTTP+token--> [PC Agent: Windows Service]
 ```
 
 - **Android app** (`my-home-pc-app/`) — Kotlin + Jetpack Compose. The user-facing client. Talks only to the relay, never directly to the PC.
 - **Relay** (`my-home-pc-docker-relay/`) — Python/FastAPI, runs in a Docker container on an always-on device on the same LAN as the target PC (a Synology NAS in this project's reference deployment, but any always-on Docker host on that LAN works). The only component capable of sending a WoL broadcast, because it's the only piece that's both always-on and physically on the PC's LAN segment.
+- **PC Agent** (`my-home-pc-agent/`) — a small .NET 8 Windows Service that runs on the target PC itself, entirely optional. Only needed for Shutdown/Restart, since powering a PC off or restarting it requires actively running code on that PC — nothing about Wake-on-LAN can do this. LAN-only by design: it never talks to the internet directly, doesn't need its own Tailscale (or other remote-access) presence, and is reached only by the relay over the LAN, gated by its own `AGENT_SHARED_SECRET` (separate from the app-facing `RELAY_API_TOKEN`).
 
 ## Reaching the relay from anywhere: Local + Remote, not just one path
 
@@ -30,8 +32,9 @@ See `RelayConnectionResolver` (`my-home-pc-app/app/src/main/java/com/pcwake/app/
 
 - **Wake**: App → `POST /api/v1/devices/{id}/wake` on the relay → relay builds a 102-byte magic packet and sends it via a `SO_BROADCAST` UDP socket to the LAN broadcast address on ports 9 and 7 → PC NIC, still receiving standby power, wakes the system from S5.
 - **Status**: App → `GET /api/v1/devices/{id}/status` → relay pings the PC's LAN IP → reports online/offline.
+- **Shutdown / Restart**: App → `POST /api/v1/devices/{id}/shutdown` (or `/restart`) on the relay → relay checks the device's `capabilities` list, then forwards an authenticated request to the PC Agent (`app/agent_client.py`) → the agent runs `shutdown.exe /s /t 5` (or `/r /t 5`) and replies `202` immediately, before the action actually completes. The app shows a confirmation dialog before sending either, and polls `/status` afterward the same way it does for Wake.
 
-Wake-on-LAN is one-directional and unacknowledged (UDP, no response from the PC), so the app polls `/status` after sending a wake to detect when the PC actually comes online.
+Wake-on-LAN is one-directional and unacknowledged (UDP, no response from the PC), so the app polls `/status` after sending a wake to detect when the PC actually comes online. Shutdown/Restart get an HTTP response from the agent, but the app still polls afterward to confirm the PC actually went offline (or came back up, for Restart).
 
 ## Why these tech choices
 
@@ -45,12 +48,9 @@ This started as a personal hobby project for one user, not a multi-tenant servic
 
 - **Transport**: plain HTTP between phone and relay, no extra TLS layer in this project's own code. This is a deliberate simplification — it assumes whatever makes the Remote address reachable from the internet (a VPN mesh, etc.) is already providing real transport encryption between your phone and your home network. If you expose the relay's Remote address via something that *doesn't* already encrypt the connection (e.g. raw port-forwarding with no VPN), add TLS in front of it yourself.
 - **App layer**: every relay endpoint except `/health` requires `Authorization: Bearer <RELAY_API_TOKEN>`, compared with a constant-time check (`hmac.compare_digest`) to avoid timing side-channels.
-- **Token storage**: the app stores the token in `EncryptedSharedPreferences` (Android Keystore-backed), entered once via the Settings screen — never hardcoded in app source.
+- **Token storage**: the app encrypts the token with a key held in the Android Keystore (AES/GCM, never leaves the device's secure hardware), entered once via the Settings screen — never hardcoded in app source.
+- **PC Agent layer**: the agent's `/shutdown` and `/restart` (but not `/health`) require their own `Authorization: Bearer <AGENT_SHARED_SECRET>`, deliberately a *different* secret from `RELAY_API_TOKEN` — a compromised app token alone can't reach the agent, only a compromised relay can. The agent never listens on anything but the LAN interface, so it has no internet-facing attack surface of its own; reaching it at all already requires having reached the relay first. Shutdown/Restart were originally deferred over exactly this kind of remote-power-control risk; revisiting that decision didn't relax these defaults (confirmation dialogs in the app, separate secret, LAN-only agent) — it just decided the tradeoff was acceptable.
 
 ## Multi-device extensibility
 
-The relay's device registry (`my-home-pc-docker-relay/devices.yaml`, gitignored — see `my-home-pc-docker-relay/devices.example.yaml` for the template) is a list from day one, and the REST API is scoped under `/devices/{id}/...`. Adding a second PC is a config-file edit and a container restart, not a schema or app code change — the Android app's device-list screen already renders a list.
-
-## What's deliberately not built
-
-Remote sleep/shutdown was considered and explicitly **not built** — it would require a second always-running agent on the target PC itself, and the project owner decided the added remote-shutdown attack surface wasn't worth it for a feature that's already covered by existing remote-desktop tools. If you want this, the natural extension point is a small authenticated HTTP listener on the PC that the relay forwards `sleep`/`shutdown` requests to, gated by a `capabilities` list per device (the `Device` model already has a `capabilities` field for exactly this kind of per-device feature flag).
+The relay's device registry (`my-home-pc-docker-relay/devices.yaml`, gitignored — see `my-home-pc-docker-relay/devices.example.yaml` for the template) is a list from day one, and the REST API is scoped under `/devices/{id}/...`. Adding a second PC is a config-file edit and a container restart, not a schema or app code change — the Android app's device-list screen already renders a list. A device's `capabilities` list controls which buttons the app shows for it — `shutdown`/`restart` should only be added once `my-home-pc-agent` is actually installed and verified working on that PC, not before.

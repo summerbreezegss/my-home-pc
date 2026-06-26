@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import httpx
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -19,12 +20,30 @@ def client(tmp_path, monkeypatch):
                         "lan_ip": "192.0.2.50",
                         "broadcast": "192.0.2.255",
                         "capabilities": ["wake", "status"],
-                    }
+                    },
+                    {
+                        "id": "pc-agent",
+                        "name": "Test PC With Agent",
+                        "mac": "AA:BB:CC:DD:EE:FF",
+                        "lan_ip": "192.0.2.51",
+                        "broadcast": "192.0.2.255",
+                        "agent_port": 9999,
+                        "capabilities": ["wake", "status", "shutdown", "restart"],
+                    },
+                    {
+                        "id": "pc-misconfigured",
+                        "name": "Test PC Missing Agent Port",
+                        "mac": "AA:BB:CC:DD:EE:FF",
+                        "lan_ip": "192.0.2.52",
+                        "broadcast": "192.0.2.255",
+                        "capabilities": ["wake", "status", "shutdown"],
+                    },
                 ]
             }
         )
     )
     monkeypatch.setenv("RELAY_API_TOKEN", "test-token")
+    monkeypatch.setenv("AGENT_SHARED_SECRET", "test-agent-secret")
 
     from app import config
 
@@ -57,8 +76,8 @@ def test_devices_with_valid_token(client):
     resp = client.get("/api/v1/devices", headers={"Authorization": "Bearer test-token"})
     assert resp.status_code == 200
     devices = resp.json()["devices"]
-    assert len(devices) == 1
-    assert devices[0]["id"] == "pc-main"
+    assert len(devices) == 3
+    assert {d["id"] for d in devices} == {"pc-main", "pc-agent", "pc-misconfigured"}
 
 
 def test_wake_unknown_device_404(client):
@@ -88,3 +107,62 @@ def test_status_offline_for_unreachable_ip(client, monkeypatch):
     body = resp.json()
     assert body["online"] is False
     assert body["method"] == "ping"
+
+
+def test_shutdown_rejected_when_capability_not_supported(client):
+    # pc-main has no "shutdown" capability configured
+    resp = client.post("/api/v1/devices/pc-main/shutdown", headers={"Authorization": "Bearer test-token"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "capability_not_supported"
+
+
+def test_shutdown_forwards_to_agent(client, monkeypatch):
+    async def fake_forward_command(device, action):
+        assert action == "shutdown"
+        return {"result": "shutdown_scheduled"}
+
+    from app import main
+
+    monkeypatch.setattr(main, "forward_command", fake_forward_command)
+
+    resp = client.post("/api/v1/devices/pc-agent/shutdown", headers={"Authorization": "Bearer test-token"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["action"] == "shutdown"
+    assert body["result"] == "forwarded"
+    assert body["agent_response"] == "shutdown_scheduled"
+
+
+def test_restart_forwards_to_agent(client, monkeypatch):
+    async def fake_forward_command(device, action):
+        assert action == "restart"
+        return {"result": "restart_scheduled"}
+
+    from app import main
+
+    monkeypatch.setattr(main, "forward_command", fake_forward_command)
+
+    resp = client.post("/api/v1/devices/pc-agent/restart", headers={"Authorization": "Bearer test-token"})
+    assert resp.status_code == 200
+    assert resp.json()["agent_response"] == "restart_scheduled"
+
+
+def test_shutdown_returns_502_when_agent_unreachable(client, monkeypatch):
+    async def fake_forward_command(device, action):
+        raise httpx.ConnectError("connection refused")
+
+    from app import main
+
+    monkeypatch.setattr(main, "forward_command", fake_forward_command)
+
+    resp = client.post("/api/v1/devices/pc-agent/shutdown", headers={"Authorization": "Bearer test-token"})
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "agent_unreachable"
+
+
+def test_shutdown_returns_502_when_agent_port_missing(client):
+    # pc-misconfigured grants the "shutdown" capability but has no agent_port set -
+    # exercises the real (un-mocked) agent_client.forward_command/AgentNotConfiguredError path
+    resp = client.post("/api/v1/devices/pc-misconfigured/shutdown", headers={"Authorization": "Bearer test-token"})
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "agent_unreachable"

@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-Capability = Literal["wake", "status", "sleep", "shutdown"]
+Capability = Literal["wake", "status", "sleep", "shutdown", "restart"]
 
 
 class Device(BaseModel):
