@@ -15,6 +15,7 @@ venv/
 bin/
 obj/
 *.user
+my-home-pc-agent/Installer/
 
 # Android / Gradle
 .gradle/
