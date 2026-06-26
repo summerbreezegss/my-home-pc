@@ -1,25 +1,33 @@
 # MyHomePC
 
-Wake up, restart, or shut down my home Windows PC from anywhere in the world — right from my phone. That was the whole goal, and once it's set up, that's really all it is: open the app, tap a button, done.
+Wake, restart, or shut down your home Windows PC from anywhere in the world, straight from your phone — designed to be simple enough for non-technical users, while keeping every command self-hosted and end-to-end encrypted.
 
-I started this because I travel and kept wanting to turn my PC on remotely without buying extra hardware for it. I looked at smart plugs and ESP32-based solutions first and ruled them out — they're physical things I'd have to buy, wire up, and maintain, for a problem that's really just software. I also didn't want to hand a vendor's cloud app direct access to my home network just to press a power button. So I built this around two things I cared about more than convenience features: **simplicity** and **privacy**. The PC-side install for Restart/Shutdown is a single double-click, not a command line — and the relay and PC agent that actually carry out every command are code I run myself, on hardware I already own, so no company's server ever needs to be trusted with my home network.
+## What this is
 
-The one piece I bring from outside is a secure connection method of my own choosing. I already had Tailscale (a VPN mesh) running on my NAS, PC, and phone, so that's what I used — but I deliberately didn't bake Tailscale into the app or relay's code. Everywhere the app talks about reaching your PC remotely, it just says "Local" or "Remote," never "Tailscale." I wanted the option to switch VPN providers later, or for someone else using this to bring their own, without that being a rewrite.
+This started from a simple problem. I travel a lot, and there are plenty of times I want my home PC available while I'm away. Streaming games to my mobile devices or handhelds instead of lugging a gaming rig with me, doing some quick dev work, grabbing a file I only ever saved locally and forgot to sync, or kicking off something hardware-intensive (a render, a build, a big download) on a machine that's actually fast enough for it.
+
+Quick answer is to remote access my PC. Easy if it's local just install Moonlight/Artemis coupled with Sunshine or Apollo and we're good to go. But Remote is tricky, probably a VPN Mesh App (e.g. Tailscale, NordVPN Meshnet, etc.) would help then remote access my PC. But what if the PC is turned off? Wake-on-LAN magic packets only work on local network. A VPN Mesh can only reach a PC that's already running, so a fully shut-down PC wont show it as part of the network at all. I could just leave my PC on 24/7, but that means burning power around the clock for a machine that's actually doing something useful only a few hours a week.
+
+This is exactly the gap this project intends to bridge. Let the PC actually shut down when nobody's using it, and wake it back up the moment it's needed.
+
+There are many apps already that does this features but I intend to make this more secure and WAY SIMPLER to configure.
+
+The day-to-day experience is meant to be effortless, even though making that possible takes a bit more effort up front (sorry :p):
+
+- **MyHomePC app** is a normal app: open it, tap Wake/Restart/Shutdown, done — it detects whether you're on Local or Remote automatically, so you never have to think about which one you're on.
+- **PC Agent** (only needed for Restart/Shutdown) installs with a single double-click — no command line, no coding. See [Getting started](#getting-started) below.
+- **Docker Relay** is the one genuinely technical piece — a one-time setup, editing a couple of config files and deploying it on a Docker host (see [Getting started](#getting-started) below). It's also where the real security benefit lives: no port-forwarding, no open inbound ports, token-gated access whether you're on Wi-Fi or across the world. Once it's running, you never touch it again, and adding a second PC later is a one-line config change, not a rewrite.
 
 ## Why this instead of a typical Wake-on-LAN app
 
-Most Wake-on-LAN apps are happy to stop at "turn it on." I wanted that too, but I also wanted Restart and Shutdown, and looking at how other apps handle that, it's almost always treated as a power-user feature — router port-forwarding rules, dynamic DNS, or writing your own SSH commands to unlock a "Pro" tier. I went the other way: the parts a normal person actually touches are designed to need zero technical background.
+Most Wake-on-LAN apps are happy to stop at "turn it on." Look past that, and remote access or anything beyond a basic wake, like Restart/Shutdown — often turns into its own technical project: router port-forwarding rules, dynamic DNS, or writing SSH commands by hand to unlock a "Pro" feature. MyHomePC is built the other way around — the parts a normal person actually touches are designed to need zero technical background:
 
 | | Typical Wake-on-LAN apps | MyHomePC |
 |---|---|---|
-| Setting up remote access | Often means configuring port-forwarding on your router yourself — router-specific menus, port numbers, sometimes dynamic DNS too, and an open inbound port on your home network either way | A VPN mesh app you already trust (I use Tailscale) — no router configuration, no open inbound ports, ever |
+| Setting up remote access | Often means configuring port-forwarding on your router yourself — router-specific menus, port numbers, sometimes dynamic DNS too, and an open inbound port on your home network either way | A VPN mesh app you already trust (Tailscale, NordVPN's Meshnet, ZeroTier, whatever you've got) — no router configuration, no open inbound ports, ever |
 | Restart / Shutdown | Rarely offered at all; where it exists, it's often an advanced/"Pro" feature that expects you to write your own SSH commands | Built in from the start. The one-time PC-side setup is a single double-click — no command line, no config files to hand-edit |
 | Who can read your commands | Depends on the app and its vendor | End-to-end encrypted between your own devices; the relay and agent that actually carry out commands are code you run yourself, not a vendor's server |
 | Getting it right the first time | Usually trial-and-error with router settings | A short guided checklist gets the one genuinely technical step (BIOS/Windows Wake-on-LAN settings) right once, and you're done |
-
-A decision I went back and forth on: I originally left Restart/Shutdown out entirely, on purpose — "I don't want a way for anyone to turn my machine off remotely" was the reasoning, since I already had Moonlight for that when I actually needed it. I came back to it later because I wanted the feature set to be complete, not because I'd changed my mind about the risk. So I kept every safety decision from the original plan rather than loosening anything: a confirmation dialog before either action fires, a separate secret for the PC agent that's distinct from the app's own token (so a leaked app token alone still can't reach it), and the agent itself never listens on anything but the LAN — it has no presence on the internet or on Tailscale at all, full stop.
-
-I also thought about just adding Shutdown/Restart endpoints straight onto the relay, since it already runs on my NAS. That doesn't work, though — the relay lives on the NAS, not the PC, and shutting a machine down requires code actually running on that machine. That's the entire reason the PC Agent exists as its own small Windows Service: it's the one piece of this project that has to live where the PC itself lives.
 
 The short version: this isn't a power-user tool with a friendly coat of paint over it — the day-to-day experience was designed from the start to need no technical knowledge at all (see [Getting started](#getting-started) below), while still being honest about what's actually happening underneath (see [`developer-docs/architecture.md`](developer-docs/architecture.md#security-model) for the full technical reasoning, including exactly what your chosen VPN provider can and can't see).
 
@@ -31,14 +39,14 @@ Follow [`developer-docs/windows-wol-setup-checklist.md`](developer-docs/windows-
 
 ### 2. Deploy the relay
 
-The relay is the always-on bridge between your phone and your PC's LAN. It needs to run on a device that's always on and on the same network as the PC — a NAS is the natural choice if you have one (it's what I use).
+The relay is the always-on bridge between your phone and your PC's LAN. It needs to run on a device that's always on and on the same network as the PC — a NAS is the natural choice if you have one.
 
 1. Copy `my-home-pc-docker-relay/devices.example.yaml` → `my-home-pc-docker-relay/devices.yaml`, and `.env.example` → `.env`. Fill in your PC's MAC/IP and a generated token.
 2. Deploy `my-home-pc-docker-relay/` to your Docker host with **host networking** enabled (required for the Wake-on-LAN broadcast to leave the container) — see [`my-home-pc-docker-relay/README.md`](my-home-pc-docker-relay/README.md) for exact steps.
 
 ### 3. Set up remote access to the relay
 
-Decide how you'll reach the relay from outside your home network — a VPN mesh (Tailscale/WireGuard) is what I use and recommend, for the reasons above. Confirm it works (e.g. `curl` the relay's `/health` endpoint from your phone's cellular connection) before moving on.
+Decide how you'll reach the relay from outside your home network — any VPN mesh app works (Tailscale, NordVPN's Meshnet, ZeroTier, etc.); this project's own setup uses Tailscale, for the reasons above. Confirm it works (e.g. `curl` the relay's `/health` endpoint from your phone's cellular connection) before moving on.
 
 ### 4. Install the MyHomePC app
 
