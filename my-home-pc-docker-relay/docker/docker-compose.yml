@@ -1,0 +1,8 @@
+services:
+  relay:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./devices.yaml:/app/devices.yaml:ro
