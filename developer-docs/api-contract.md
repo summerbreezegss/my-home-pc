@@ -15,7 +15,7 @@ No auth. Liveness check.
 
 ## `GET /devices`
 
-List registered devices (from `my-home-pc-docker-relay/devices.yaml`).
+List registered devices (from `my-home-pc-docker-relay/docker/devices.yaml`).
 
 ```
 200 OK

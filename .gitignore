@@ -2,8 +2,7 @@
 .env
 *.env
 !.env.example
-my-home-pc-docker-relay/devices.yaml
-!my-home-pc-docker-relay/devices.example.yaml
+my-home-pc-docker-relay/docker/
 
 # Python
 __pycache__/
