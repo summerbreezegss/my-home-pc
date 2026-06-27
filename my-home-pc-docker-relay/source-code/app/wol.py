@@ -13,12 +13,9 @@ def build_magic_packet(mac: str) -> bytes:
 
 def send_magic_packet(mac: str, broadcast_ip: str, port: int) -> None:
     packet = build_magic_packet(mac)
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    try:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.sendto(packet, (broadcast_ip, port))
-    finally:
-        sock.close()
 
 
 def wake_device(device: Device, attempts: int = 3, delay_s: float = 0.5) -> None:
