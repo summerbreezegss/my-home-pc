@@ -3,21 +3,20 @@
 FastAPI service that sends Wake-on-LAN packets, checks PC status, and forwards Shutdown/Restart to [`my-home-pc-agent`](../my-home-pc-agent/) when a device's `capabilities` list permits it. This is the Docker-deployed package — it needs to run as a container on an always-on Docker host on the **same LAN** as the target PC. See [`../developer-docs/architecture.md`](../developer-docs/architecture.md) for why.
 
 This folder has two parts:
-- **`docker/`** (gitignored, built by `publish.ps1`) — the only thing that needs to exist on your NAS: the Dockerfile, compose file, requirements, and app code, plus your own `devices.yaml`/`.env`. Nothing else.
-- **`source-code/`** — the actual source, tests, and dev tooling. Only needed on your dev machine.
+- **`docker/`** — committed to the repo, and the only thing you need to grab to deploy: the Dockerfile, compose file, requirements, app code, and `devices.example.yaml`/`.env.example` templates. Clone or download this folder straight from GitHub and copy it to your NAS — no build step required.
+- **`source-code/`** — the same app code plus tests and dev tooling, for actually working on the project. `docker/`'s copy of the Dockerfile/compose/requirements/app code is kept in sync with this via `publish.ps1` (see below) — only needed if you're changing the code, not if you're just deploying it as-is.
 
 ## First-time setup
 
-1. Build the deployment folder: `cd source-code && powershell -ExecutionPolicy Bypass -File .\publish.ps1`. This produces `../docker/`, including the `devices.example.yaml`/`.env.example` templates sitting right there for convenience — it never touches `docker/devices.yaml` or `docker/.env` if they already exist.
-2. In `docker/`, rename/copy the templates already there and fill them in:
-   ```
-   copy devices.example.yaml devices.yaml   # then fill in YOUR PC's MAC/IP/broadcast
-   copy .env.example .env                   # then set a real RELAY_API_TOKEN (and AGENT_SHARED_SECRET if using Shutdown/Restart)
-   ```
+In `docker/`, copy the templates already there and fill them in:
+```
+copy devices.example.yaml devices.yaml   # then fill in YOUR PC's MAC/IP/broadcast
+copy .env.example .env                   # then set a real RELAY_API_TOKEN (and AGENT_SHARED_SECRET if using Shutdown/Restart)
+```
 
-`devices.yaml` and `.env` are gitignored (the whole `docker/` folder is) — they hold your own machine's details and secret tokens, not meant to be committed.
+`devices.yaml` and `.env` are gitignored — they hold your own machine's details and secret tokens, never meant to be committed. Everything else in `docker/` is tracked normally.
 
-Re-run `publish.ps1` after any code change in `source-code/app/` — it always refreshes the Dockerfile/compose/requirements/app code in `docker/`, but leaves your `devices.yaml`/`.env` alone.
+If you're editing the code in `source-code/app/`, run `cd source-code && powershell -ExecutionPolicy Bypass -File .\publish.ps1` afterward to refresh `docker/`'s copy of the Dockerfile/compose/requirements/app code before committing or redeploying — it never touches `docker/devices.yaml` or `docker/.env`.
 
 ## Local dev (no Docker)
 

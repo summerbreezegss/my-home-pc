@@ -41,7 +41,7 @@ Follow [`developer-docs/windows-wol-setup-checklist.md`](developer-docs/windows-
 
 The relay is the always-on bridge between your phone and your PC's LAN. It needs to run on a device that's always on and on the same network as the PC — a NAS is the natural choice if you have one.
 
-1. Build the minimal deployment folder: `cd my-home-pc-docker-relay/source-code && powershell -ExecutionPolicy Bypass -File .\publish.ps1`. This produces `my-home-pc-docker-relay/docker/` containing just the Dockerfile, compose file, requirements, app code, and the `devices.example.yaml`/`.env.example` templates — the only folder that needs to exist on your NAS.
+1. Grab `my-home-pc-docker-relay/docker/` — it's committed to the repo as-is, containing just the Dockerfile, compose file, requirements, app code, and the `devices.example.yaml`/`.env.example` templates. No build step — just copy that folder to wherever it'll run.
 2. In `my-home-pc-docker-relay/docker/`, rename/copy `devices.example.yaml` → `devices.yaml` and `.env.example` → `.env` (both already sitting right there). Fill in your PC's MAC/IP and a generated token.
 3. Deploy `my-home-pc-docker-relay/docker/` to your Docker host with **host networking** enabled (required for the Wake-on-LAN broadcast to leave the container) — see [`my-home-pc-docker-relay/README.md`](my-home-pc-docker-relay/README.md) for exact steps.
 
