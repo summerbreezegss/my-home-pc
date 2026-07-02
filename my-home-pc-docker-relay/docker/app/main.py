@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from .agent_client import AgentNotConfiguredError, forward_command
 from .auth import require_token
 from .config import load_devices
-from .models import Device, DeviceListResponse, StatusResponse, WakeResponse
+from .models import AppDeviceListResponse, AppDeviceView, Device, StatusResponse, WakeResponse
 from .status import get_device_status
 from .wol import wake_device
 
@@ -44,9 +44,12 @@ def health() -> dict:
     return {"status": "ok", "version": "0.1.0"}
 
 
-@app.get("/api/v1/devices", response_model=DeviceListResponse, dependencies=[Depends(require_token)])
-def list_devices() -> DeviceListResponse:
-    return DeviceListResponse(devices=list(load_devices().values()))
+@app.get("/api/v1/devices", response_model=AppDeviceListResponse, dependencies=[Depends(require_token)])
+def list_devices() -> AppDeviceListResponse:
+    return AppDeviceListResponse(
+        devices=[AppDeviceView(id=d.id, name=d.name, capabilities=d.capabilities)
+                 for d in load_devices().values()]
+    )
 
 
 @app.post("/api/v1/devices/{device_id}/wake", response_model=WakeResponse, dependencies=[Depends(require_token)])

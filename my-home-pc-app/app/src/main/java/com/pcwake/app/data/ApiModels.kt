@@ -10,11 +10,6 @@ data class HealthResponse(
 data class Device(
     val id: String,
     val name: String,
-    val mac: String,
-    @SerializedName("lan_ip") val lanIp: String,
-    val broadcast: String,
-    @SerializedName("wol_ports") val wolPorts: List<Int> = emptyList(),
-    @SerializedName("agent_port") val agentPort: Int? = null,
     val capabilities: List<String> = emptyList()
 )
 
