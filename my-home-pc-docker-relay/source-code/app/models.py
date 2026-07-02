@@ -16,8 +16,19 @@ class Device(BaseModel):
     capabilities: list[Capability] = ["wake", "status"]
 
 
+class AppDeviceView(BaseModel):
+    """Minimal device representation sent to the app — no internal network details."""
+    id: str
+    name: str
+    capabilities: list[Capability] = []
+
+
 class DeviceListResponse(BaseModel):
     devices: list[Device]
+
+
+class AppDeviceListResponse(BaseModel):
+    devices: list[AppDeviceView]
 
 
 class WakeResponse(BaseModel):
