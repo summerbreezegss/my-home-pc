@@ -11,6 +11,10 @@ from .models import AppDeviceListResponse, AppDeviceView, Device, StatusResponse
 from .status import get_device_status
 from .wol import wake_device
 
+# Uvicorn only formats its own loggers; without this, the relay's own log lines (the
+# auth audit trail especially) would print bare, with no timestamp to audit by.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 logger = logging.getLogger("relay.agent_forward")
 
 # Swagger UI (/docs, /redoc) and the OpenAPI schema advertise the full API surface to anyone

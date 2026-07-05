@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -20,6 +21,49 @@ var port = builder.Configuration["AGENT_PORT"] ?? "8585";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 var app = builder.Build();
+
+// Throttle repeated bad-secret attempts per source IP. In-memory on purpose — a service
+// restart forgetting the counters costs an attacker at most one fresh window. While locked
+// out, even the correct secret is refused, so the lockout can't be used as a guessing oracle.
+const int MaxAuthFailures = 5;
+var authLockout = TimeSpan.FromMinutes(5);
+var authFailures = new ConcurrentDictionary<string, (int Count, DateTime LastFailureUtc)>();
+
+// Returns null when the request may proceed, otherwise the 401/429 to send back.
+// Every rejection is logged with the source IP — as a Windows Service that lands in the
+// Application event log, timestamped, which is the audit trail for secret-guessing.
+IResult? GateAuth(HttpRequest request)
+{
+    var ip = request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var now = DateTime.UtcNow;
+
+    if (authFailures.TryGetValue(ip, out var entry))
+    {
+        if (now - entry.LastFailureUtc > authLockout)
+        {
+            authFailures.TryRemove(ip, out _);
+        }
+        else if (entry.Count >= MaxAuthFailures)
+        {
+            app.Logger.LogWarning("Auth locked out: ip={Ip} path={Path}", ip, request.Path);
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        }
+    }
+
+    if (!IsAuthorized(request))
+    {
+        var updated = authFailures.AddOrUpdate(
+            ip,
+            _ => (1, now),
+            (_, e) => (now - e.LastFailureUtc > authLockout ? 1 : e.Count + 1, now));
+        app.Logger.LogWarning("Auth rejected: ip={Ip} path={Path} consecutiveFailures={Count}",
+            ip, request.Path, updated.Count);
+        return Results.Unauthorized();
+    }
+
+    authFailures.TryRemove(ip, out _);
+    return null;
+}
 
 bool IsAuthorized(HttpRequest request)
 {
@@ -53,9 +97,9 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapPost("/shutdown", (HttpRequest request) =>
 {
-    if (!IsAuthorized(request))
+    if (GateAuth(request) is { } denied)
     {
-        return Results.Unauthorized();
+        return denied;
     }
     System.Diagnostics.Process.Start("shutdown.exe", "/s /t 5");
     return Results.Json(new { result = "shutdown_scheduled", delay_seconds = 5 }, statusCode: StatusCodes.Status202Accepted);
@@ -63,9 +107,9 @@ app.MapPost("/shutdown", (HttpRequest request) =>
 
 app.MapPost("/restart", (HttpRequest request) =>
 {
-    if (!IsAuthorized(request))
+    if (GateAuth(request) is { } denied)
     {
-        return Results.Unauthorized();
+        return denied;
     }
     System.Diagnostics.Process.Start("shutdown.exe", "/r /t 5");
     return Results.Json(new { result = "restart_scheduled", delay_seconds = 5 }, statusCode: StatusCodes.Status202Accepted);
