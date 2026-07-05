@@ -13,16 +13,17 @@ LAN hop (documented as an accepted risk instead).
 
 ## Phase 1 — Paper cuts (small, independent, no new attack surface)
 
-**Status 2026-07-05: implemented; live verification done except the R8 build.** Relay tests pass
-(18/18, incl. two new tests); release APK builds with R8 and `seeds.txt` confirms the Gson model
-fields are kept. Live-verified 2026-07-05: relay redeployed on the NAS, agent rebuilt/reinstalled
-on the PC, Restart worked end-to-end from the phone, Settings validation tested on-device.
-**Correction (same day):** the APK on the phone turned out to be the *debug* build (Android
-Studio Run at 12:42) — the only R8 release build ever produced is `app-release-unsigned.apk`,
-which Android cannot install, and v0.1's published APK is hash-identical to `app-debug.apk`.
-So the functional tests stand, but no R8-shrunk build has ever run on-device. Open items:
-set up release signing (no keystore/signingConfig exists), then re-run the Restart test on the
-signed R8 build to close this out.
+**Status 2026-07-05: COMPLETE — implemented and live-verified on all three components.**
+Relay tests pass (18/18, incl. two new tests). Live-verified: relay redeployed on the NAS, agent
+rebuilt/reinstalled on the PC, Settings validation tested on-device, and the signed R8 release
+build verified on-device (Restart end-to-end: Keystore token read, Retrofit, Gson reflection).
+Verification detour worth remembering: the first on-device "R8 test" turned out to have run the
+*debug* build — no release signing existed, and v0.1's published APK was hash-identical to
+`app-debug.apk`. Fixed by creating a real release keystore (outside the repo, wired via gitignored
+`keystore.properties`) and re-testing the properly signed R8 APK. Both lessons (verify the release
+artifact itself; no real hostnames/IPs as UI placeholders — the Settings screen had leaked the
+developer's LAN IP and MagicDNS name into distributed APKs) are now in the workspace
+`CODING_STANDARDS.md`. Shipped as GitHub release v0.2.
 
 - [x] **Docs: correct the agent-binding claim** — `architecture.md` says the agent "never listens on
   anything but the LAN interface"; `Program.cs` binds `0.0.0.0`. Fixed the doc to match reality
@@ -40,8 +41,8 @@ signed R8 build to close this out.
 - [x] **App: enable R8 in release build** — `optimization { enable = true }` plus the AGP 9-required
   `android.r8.gradual.support=true` in `gradle.properties`; keep rules for the Gson-reflected API
   models live in `app/src/main/keepRules/gson.keep` (AGP 9's replacement for `proguardFiles`).
-  Still to do live: sign the release build (no signing setup exists yet — see status note above)
-  and verify the R8 APK on-device (Keystore/reflection paths).
+  Verified live 2026-07-05 on the signed R8 build (Keystore/reflection paths OK — see status
+  note above for the signing setup this required).
 - [x] **App: Settings input validation** — host fields are sanitized (trim, strip scheme, trailing
   slash), port must be 1–65535, token is trimmed; friendly error shown and Save no longer navigates
   away on invalid input. (The old behavior surfaced as a confusing Retrofit "Invalid URL" failure

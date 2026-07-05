@@ -73,7 +73,7 @@ fun SettingsScreen(
                 value = viewModel.localHost,
                 onValueChange = { viewModel.localHost = it },
                 label = { Text("Local Host (optional)") },
-                placeholder = { Text("e.g. 192.168.18.28") },
+                placeholder = { Text("e.g. 192.168.1.50") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -81,7 +81,7 @@ fun SettingsScreen(
                 value = viewModel.remoteHost,
                 onValueChange = { viewModel.remoteHost = it },
                 label = { Text("Remote Host") },
-                placeholder = { Text("e.g. gss-ds220-plus.tail0537a1.ts.net") },
+                placeholder = { Text("e.g. nas.your-vpn.net") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
