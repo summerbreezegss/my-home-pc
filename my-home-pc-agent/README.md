@@ -2,7 +2,7 @@
 
 A tiny .NET 8 Windows Service that runs **on the target PC itself** and accepts authenticated Shutdown/Restart commands forwarded by the relay. This only exists because powering a PC off or restarting it requires actively running code on that PC — nothing about Wake-on-LAN can do this, which is also why this is the one component that's entirely optional: if you only want the core Wake feature, you never need to install this at all. See the [root README](../README.md) for how this fits into the whole system and why it's built this way.
 
-LAN-only by design — it doesn't talk to the internet or Tailscale itself; the relay reaches it over your home network, the same way it reaches the PC for Wake-on-LAN and status checks.
+It never makes outbound connections — the relay reaches *it* over your home network, the same way it reaches the PC for Wake-on-LAN and status checks. Note it listens on all of the PC's network interfaces (not just the LAN one), so the Windows firewall and the shared secret are what actually bound who can reach it — see `developer-docs/architecture.md`'s security model.
 
 This folder has two parts:
 - **`Installer/`** — the only thing end users need. Share just this folder.
@@ -10,7 +10,7 @@ This folder has two parts:
 
 ## API
 
-- `GET /health` — no auth — `{ "status": "ok", "hostname": "..." }`
+- `GET /health` — no auth — `{ "status": "ok" }`
 - `POST /shutdown` — `Authorization: Bearer <AGENT_SHARED_SECRET>` — schedules `shutdown /s /t 5`
 - `POST /restart` — same auth — schedules `shutdown /r /t 5`
 
@@ -29,8 +29,13 @@ Re-running `Install PcAgent.exe` (e.g. after a code change — re-run `publish.p
 
 ## Local testing (without installing as a service)
 
+The service refuses to start while `AGENT_SHARED_SECRET` is unset or still the placeholder
+shipped in `appsettings.json`, so give it a throwaway value for the test run (an environment
+variable works — no need to edit the file):
+
 ```
 cd source-code/PcAgent
+$env:AGENT_SHARED_SECRET = "local-test-secret"
 dotnet run --no-launch-profile
 ```
 

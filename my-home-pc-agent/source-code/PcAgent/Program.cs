@@ -1,12 +1,19 @@
 using System.Security.Cryptography;
 using System.Text;
 
+// The value appsettings.json ships with. It's public knowledge (it's in the repo and in every
+// installer copy), so treating it as a real secret would leave a never-configured install
+// protected by a string anyone can look up.
+const string PlaceholderSecret = "changeme-must-match-relay-env";
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
 
-if (string.IsNullOrEmpty(builder.Configuration["AGENT_SHARED_SECRET"]))
+var configuredSecret = builder.Configuration["AGENT_SHARED_SECRET"];
+if (string.IsNullOrEmpty(configuredSecret) || configuredSecret == PlaceholderSecret)
 {
-    throw new InvalidOperationException("AGENT_SHARED_SECRET is not configured in appsettings.json.");
+    throw new InvalidOperationException(
+        "AGENT_SHARED_SECRET is not configured in appsettings.json — set it to a real secret (the shipped placeholder is rejected).");
 }
 var port = builder.Configuration["AGENT_PORT"] ?? "8585";
 
@@ -19,6 +26,13 @@ bool IsAuthorized(HttpRequest request)
     // Read fresh on every call (not captured once at startup) so editing AGENT_SHARED_SECRET
     // in appsettings.json takes effect via its built-in file-reload watcher, with no service restart needed.
     var sharedSecret = app.Configuration["AGENT_SHARED_SECRET"] ?? "";
+
+    // The startup check rejects these, but hot-reload means the file can change while running —
+    // never authorize against an empty or publicly-known value.
+    if (sharedSecret.Length == 0 || sharedSecret == PlaceholderSecret)
+    {
+        return false;
+    }
 
     const string prefix = "Bearer ";
     var header = request.Headers.Authorization.ToString();
@@ -33,7 +47,9 @@ bool IsAuthorized(HttpRequest request)
         && CryptographicOperations.FixedTimeEquals(tokenBytes, secretBytes);
 }
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", hostname = Environment.MachineName }));
+// No hostname here: /health is unauthenticated, and a machine name is free reconnaissance
+// for anything that can reach this port.
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapPost("/shutdown", (HttpRequest request) =>
 {

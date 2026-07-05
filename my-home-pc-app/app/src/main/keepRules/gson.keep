@@ -1,0 +1,8 @@
+# Gson populates the API models (ApiModels.kt) by reflecting on field names at runtime,
+# so R8 must not rename or strip those fields — a mismatch doesn't fail the build, it just
+# yields null/default fields in release builds only. Class names may still be obfuscated;
+# only the members need their names.
+-keepclassmembers class com.pcwake.app.data.** {
+    <fields>;
+    <init>(...);
+}

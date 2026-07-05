@@ -62,6 +62,19 @@ def test_health_no_auth(client):
     assert resp.json()["status"] == "ok"
 
 
+def test_health_exposes_nothing_but_status(client):
+    # /health is unauthenticated - it must not leak version or any other detail.
+    assert client.get("/api/v1/health").json() == {"status": "ok"}
+
+
+def test_interactive_docs_hidden_by_default(client):
+    # Swagger/OpenAPI advertise the API surface unauthenticated - off unless
+    # RELAY_ENABLE_DOCS is explicitly set (read once at app import).
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+
+
 def test_devices_requires_auth(client):
     resp = client.get("/api/v1/devices")
     assert resp.status_code == 401
