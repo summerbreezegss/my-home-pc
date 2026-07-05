@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -46,6 +47,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pcwake.app.R
+import com.pcwake.app.data.WifiNetworkMonitor
 import com.pcwake.app.ui.statusColor
 import com.pcwake.app.ui.statusText
 
@@ -58,6 +60,7 @@ fun DeviceListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val trustDialog by viewModel.trustDialog.collectAsState()
+    val context = LocalContext.current
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -105,6 +108,27 @@ fun DeviceListScreen(
                 TextButton(onClick = { viewModel.onTrustDecision(dialog.ssid, trusted = false) }) {
                     Text("Not now")
                 }
+            }
+        )
+        TrustDialog.LocationServicesOff -> AlertDialog(
+            onDismissRequest = { viewModel.onLocationServicesOffDismissed() },
+            icon = { Icon(painterResource(R.drawable.ic_wifi), contentDescription = null) },
+            title = { Text("Location services are off") },
+            text = {
+                Text(
+                    "MyHomePC can't check which Wi-Fi network you're on while Location is " +
+                        "off, so it's using Remote for now. Turn Location on to enable the " +
+                        "faster Local connection at home."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onLocationServicesOffDismissed()
+                    WifiNetworkMonitor.openLocationSettings(context)
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onLocationServicesOffDismissed() }) { Text("Not now") }
             }
         )
         TrustDialog.None -> {}

@@ -1,8 +1,11 @@
 package com.pcwake.app.data
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -10,8 +13,11 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.provider.Settings
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -25,11 +31,48 @@ import kotlin.coroutines.resume
  * network" and fall back to Remote, so every failure mode here fails safe.
  */
 object WifiNetworkMonitor {
+    private const val TAG = "WifiNetworkMonitor"
     private const val SSID_LOOKUP_TIMEOUT_MS = 2_000L
 
     fun hasLocationPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
+
+    /**
+     * The app's own runtime permission being granted isn't enough — Android also redacts the
+     * SSID (returns "<unknown ssid>") whenever the phone's system-wide Location toggle is off,
+     * regardless of what the app itself is allowed to do. Distinguishing this from a plain
+     * permission problem is what lets Settings tell the user the actual fix (flip the system
+     * toggle) instead of re-asking for a permission that's already granted.
+     */
+    fun isLocationServicesEnabled(context: Context): Boolean {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return false
+        return LocationManagerCompat.isLocationEnabled(locationManager)
+    }
+
+    /**
+     * Cheap, permission-free check for whether the active network is Wi-Fi at all — used to
+     * avoid telling a mobile-data user "turn on Location" when that wouldn't help them (there's
+     * no Wi-Fi network to read a name from regardless of the Location toggle).
+     */
+    fun isConnectedToWifi(context: Context): Boolean {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    /** Opens the system Location settings screen, failing silently if no activity handles it. */
+    fun openLocationSettings(context: Context) {
+        try {
+            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "No activity to handle Location settings", e)
+        }
+    }
 
     suspend fun currentSsid(context: Context): String? {
         if (!hasLocationPermission(context)) return null

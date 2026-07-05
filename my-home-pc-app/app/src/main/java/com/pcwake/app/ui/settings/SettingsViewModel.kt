@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pcwake.app.data.NetworkTrustGate
 import com.pcwake.app.data.NetworkTrustRepository
+import com.pcwake.app.data.NetworkTrustState
 import com.pcwake.app.data.RelayClient
 import com.pcwake.app.data.RelayConnection
 import com.pcwake.app.data.SettingsRepository
@@ -46,13 +47,29 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _wifiCheckDeclined = MutableStateFlow(false)
     val wifiCheckDeclined: StateFlow<Boolean> = _wifiCheckDeclined
 
-    init {
-        reloadTrust()
-    }
+    /**
+     * True when the trust gate's current read is [NetworkTrustState.LocationServicesOff] —
+     * distinct from [wifiCheckDeclined] because re-requesting the app permission won't fix it;
+     * the user needs the system Location screen. Derived from [NetworkTrustGate.evaluate]
+     * rather than re-deriving the permission/toggle check independently, so this can never
+     * drift from what the resolver is actually doing (e.g. it also inherits the "not on
+     * Wi-Fi at all" and "no Local Host configured" exclusions for free).
+     */
+    private val _locationServicesOff = MutableStateFlow(false)
+    val locationServicesOff: StateFlow<Boolean> = _locationServicesOff
 
-    private fun reloadTrust() {
+    // No init-time load: the screen's own ON_RESUME observer covers first composition too
+    // (Android's Lifecycle replays the current state to a newly added observer), matching
+    // how DeviceListViewModel has no init-time load either — avoids a redundant double call.
+
+    /** Public so the screen can re-check after the user returns from system Location settings. */
+    fun reloadTrust() {
         _trustedNetworks.value = trustRepository.getDecisions()
         _wifiCheckDeclined.value = trustRepository.isPermissionDeclined()
+        viewModelScope.launch {
+            val trustState = NetworkTrustGate.evaluate(getApplication(), localHost.isNotBlank(), trustRepository)
+            _locationServicesOff.value = trustState is NetworkTrustState.LocationServicesOff
+        }
     }
 
     fun setNetworkTrusted(ssid: String, trusted: Boolean) {
@@ -115,6 +132,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             _testState.value = ConnectionTestState.Failure(it)
             return
         }
+        // Also doubles as the manual refresh affordance for the Trusted Networks hints below —
+        // ON_RESUME alone can miss a Location toggle flipped via a quick-settings tile.
+        reloadTrust()
         viewModelScope.launch {
             _testState.value = ConnectionTestState.Testing
             try {
