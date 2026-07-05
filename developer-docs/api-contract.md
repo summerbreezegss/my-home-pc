@@ -6,12 +6,16 @@ Auth: every endpoint except `/health` requires `Authorization: Bearer <RELAY_API
 
 ## `GET /health`
 
-No auth. Liveness check.
+No auth. Liveness check — deliberately reports nothing but liveness (no version or other
+details), since anything here is readable by whoever can reach the port.
 
 ```
 200 OK
-{ "status": "ok", "version": "0.1.0" }
+{ "status": "ok" }
 ```
+
+FastAPI's interactive docs (`/docs`, `/redoc`, `/openapi.json`) are disabled unless the relay
+is started with `RELAY_ENABLE_DOCS=true` — they expose the full API surface unauthenticated.
 
 ## `GET /devices`
 
@@ -82,13 +86,15 @@ Request body: {}
 
 Base URL: `http://<pc-lan-ip>:<agent_port>` — reached only by the relay over the LAN, never directly by the app.
 
-Auth: `/shutdown` and `/restart` require `Authorization: Bearer <AGENT_SHARED_SECRET>` (a secret separate from `RELAY_API_TOKEN`). `/health` has no auth.
+Auth: `/shutdown` and `/restart` require `Authorization: Bearer <AGENT_SHARED_SECRET>` (a secret separate from `RELAY_API_TOKEN`). `/health` has no auth. The agent refuses to start (and refuses to authorize) while `AGENT_SHARED_SECRET` is unset or still the shipped placeholder value.
 
 ## `GET /health`
 
+No hostname or other machine details — this endpoint is unauthenticated.
+
 ```
 200 OK
-{ "status": "ok", "hostname": "DESKTOP-ARJAY" }
+{ "status": "ok" }
 ```
 
 ## `POST /shutdown`

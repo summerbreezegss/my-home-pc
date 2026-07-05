@@ -1,4 +1,5 @@
 import logging
+import os
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -12,7 +13,18 @@ from .wol import wake_device
 
 logger = logging.getLogger("relay.agent_forward")
 
-app = FastAPI(title="Remote PC Wake Relay")
+# Swagger UI (/docs, /redoc) and the OpenAPI schema advertise the full API surface to anyone
+# who can reach the port, unauthenticated — useful as a manual test console during development,
+# free reconnaissance in production. Off unless explicitly re-enabled via the environment.
+# (Read here at import time is safe: importing .config above already ran load_dotenv().)
+_docs_enabled = os.environ.get("RELAY_ENABLE_DOCS", "").strip().lower() in ("1", "true", "yes")
+
+app = FastAPI(
+    title="Remote PC Wake Relay",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 
 def get_device_or_404(device_id: str) -> Device:
@@ -41,7 +53,9 @@ async def forward_action(device_id: str, action: str) -> dict:
 
 @app.get("/api/v1/health")
 def health() -> dict:
-    return {"status": "ok", "version": "0.1.0"}
+    # Unauthenticated liveness check only — no version (or anything else) here, since
+    # anything this endpoint returns is readable by whoever can reach the port.
+    return {"status": "ok"}
 
 
 @app.get("/api/v1/devices", response_model=AppDeviceListResponse, dependencies=[Depends(require_token)])

@@ -140,8 +140,11 @@ fun SettingsScreen(
 
             Button(
                 onClick = {
-                    viewModel.save()
-                    onSaved()
+                    // Don't navigate away when validation rejected the values — the
+                    // failure message is shown via the test-state text above.
+                    if (viewModel.save()) {
+                        onSaved()
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {

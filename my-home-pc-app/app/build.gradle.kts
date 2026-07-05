@@ -15,16 +15,19 @@ android {
         applicationId = "com.pcwake.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            // R8 shrinking/obfuscation. Custom keep rules live in src/main/keepRules/
+            // (AGP 9's source-folder replacement for proguardFiles, *.keep files) — see
+            // gson.keep there for why the Gson-reflected API models must survive obfuscation.
             optimization {
-                enable = false
+                enable = true
             }
         }
     }

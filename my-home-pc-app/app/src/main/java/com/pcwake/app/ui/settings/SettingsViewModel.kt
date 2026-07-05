@@ -35,7 +35,48 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _savedConfirmation = MutableStateFlow(false)
     val savedConfirmation: StateFlow<Boolean> = _savedConfirmation
 
+    /**
+     * Normalizes what people actually paste into a host field — a copied URL with a scheme,
+     * a trailing slash, stray whitespace — down to the bare hostname/IP the relay client needs.
+     */
+    private fun sanitizeHost(raw: String): String {
+        var host = raw.trim()
+        for (scheme in listOf("https://", "http://")) {
+            if (host.startsWith(scheme, ignoreCase = true)) {
+                host = host.substring(scheme.length)
+            }
+        }
+        return host.trimEnd('/')
+    }
+
+    /**
+     * Cleans up the current field values in place (so the user sees what will actually be used)
+     * and returns a human-readable problem description, or null if everything is usable.
+     * Malformed values would otherwise surface as a confusing Retrofit "Invalid URL" error.
+     */
+    private fun sanitizeAndValidate(): String? {
+        localHost = sanitizeHost(localHost)
+        remoteHost = sanitizeHost(remoteHost)
+        port = port.trim()
+        token = token.trim()
+
+        val portNumber = port.toIntOrNull()
+        if (port.isNotBlank() && (portNumber == null || portNumber !in 1..65535)) {
+            return "Port must be a number between 1 and 65535"
+        }
+        listOf("Local Host" to localHost, "Remote Host" to remoteHost).forEach { (label, host) ->
+            if (host.any { it.isWhitespace() } || host.contains('/')) {
+                return "$label should be just a hostname or IP — no spaces or slashes"
+            }
+        }
+        return null
+    }
+
     fun testConnection() {
+        sanitizeAndValidate()?.let {
+            _testState.value = ConnectionTestState.Failure(it)
+            return
+        }
         viewModelScope.launch {
             _testState.value = ConnectionTestState.Testing
             try {
@@ -54,9 +95,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 val api = connection.api
-                val health = api.health()
+                api.health()
                 api.listDevices("Bearer $token")
-                _testState.value = ConnectionTestState.Success("Connected via ${connection.displayName} — relay v${health.version}")
+                _testState.value = ConnectionTestState.Success("Connected via ${connection.displayName}")
             } catch (e: HttpException) {
                 val msg = if (e.code() == 401) "Reached relay, but token was rejected" else "Server error: ${e.code()}"
                 _testState.value = ConnectionTestState.Failure(msg)
@@ -66,8 +107,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun save() {
+    /** Returns true if the settings were valid and saved; false if validation blocked the save. */
+    fun save(): Boolean {
+        sanitizeAndValidate()?.let {
+            _testState.value = ConnectionTestState.Failure(it)
+            _savedConfirmation.value = false
+            return false
+        }
         repository.save(localHost, remoteHost, port, token)
         _savedConfirmation.value = true
+        return true
     }
 }

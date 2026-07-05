@@ -28,7 +28,7 @@ pip install -r requirements-dev.txt
 python -m uvicorn app.main:app --reload --port 8675
 ```
 
-Browse to `http://localhost:8675/docs` for the interactive Swagger UI — useful for manually testing `/wake` and `/status` before the MyHomePC app exists.
+For the interactive Swagger UI at `http://localhost:8675/docs` — useful for manually testing `/wake` and `/status` — set `RELAY_ENABLE_DOCS=true` first (in your shell or in a local `.env`). It's off by default because it advertises the full API surface, unauthenticated, to anyone who can reach the port.
 
 ## Tests
 

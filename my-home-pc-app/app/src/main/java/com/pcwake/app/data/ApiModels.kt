@@ -2,9 +2,10 @@ package com.pcwake.app.data
 
 import com.google.gson.annotations.SerializedName
 
+// /health is deliberately minimal — it's unauthenticated on the relay, so it reports
+// liveness and nothing else (the version field was removed for that reason).
 data class HealthResponse(
-    val status: String,
-    val version: String
+    val status: String
 )
 
 data class Device(
