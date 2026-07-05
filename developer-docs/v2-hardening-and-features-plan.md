@@ -85,6 +85,38 @@ Unknown/untrusted/undecidable (no permission, location off, mobile data) all sil
 Remote, so no state can break the app. Debug + R8 release builds both compile; unit tests
 cover the trust-map codec and SSID normalization (reflection-free Gson, no new keep rules).
 
+**Post-release fix, same day**: the originally published v0.3 had a real gap, found via a
+Lenovo Legion Y700 tablet upgrade test. Two bugs, both in `NetworkTrustGate`: (1) an
+unguarded `WifiNetworkMonitor.currentSsid()` call meant any exception during SSID lookup
+escaped `evaluate()` entirely, skipped the trust-dialog assignment, and surfaced one level up
+as a misleading "Can't reach relay" error instead of failing safe like every other unreadable-
+SSID case — fixed by wrapping the lookup in its own try/catch (logs to `Log.e`, falls back to
+`Unavailable`). (2) Once that was fixed, the real root cause surfaced: the tablet's app-level
+location permission was granted, but its system-wide Location toggle was off — Android
+redacts the SSID either way, and the app had no way to tell these two cases apart, so it just
+silently used Remote with zero explanation. Added a new `LocationServicesOff` state (distinct
+from a plain missing-permission `Unavailable`) plus a hint in Settings → Trusted Networks
+with a button that deep-links straight to the system Location screen, re-checked automatically
+on resume. Live-verified on the same tablet after the fix.
+
+A `/code-review` pass on that fix (high effort, 8 finder angles + verification) caught that it
+was itself incomplete: the new `isLocationServicesEnabled()` call was left unguarded — the
+same bug class one line below it, in the exact function this fix was patching — reachable via
+an uncaught crash in `DeviceDetailScreen` (no outer try/catch there at all) or a repeat of the
+misleading "Can't reach relay" message via Settings' Test Connection. Also fixed in the same
+pass: `catch (e: Exception)` was swallowing `CancellationException`, breaking structured
+concurrency; the Location-off check ran before confirming the device was even on Wi-Fi, so a
+mobile-data user got sent to "turn on Location" for a fix that wouldn't help them (now gated
+behind a new `WifiNetworkMonitor.isConnectedToWifi()` check); `LocationServicesOff` had no
+device-list-level surfacing despite its own doc comment saying it's "worth surfacing" (added a
+matching dismissible dialog there, session-scoped since it's live system state, not a
+per-network decision); Settings' hint could show even with no Local Host configured; the
+"Open Settings" deep link had no `ActivityNotFoundException` guard; and the per-screen
+location-check logic was duplicated between `NetworkTrustGate` and `SettingsViewModel` instead
+of the latter just reusing the former's `evaluate()` result. All findings fixed and re-verified
+(unit tests + both build variants) before this replaced the original v0.3 release/tag, rather
+than shipping as v0.4, since the as-published v0.3 had a real, user-facing gap.
+
 - [x] **Known-network check for the Local probe** — the app previously sent the bearer token to
   whatever answered `/health` at the configured Local IP, on any network. Now every Local probe
   (device list, device detail, and Settings' Test Connection — all three call sites) is gated by

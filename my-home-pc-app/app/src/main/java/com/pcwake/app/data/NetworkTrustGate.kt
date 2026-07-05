@@ -1,6 +1,8 @@
 package com.pcwake.app.data
 
 import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 
 /**
  * The one place that decides whether the Local relay probe is allowed right now, and what —
@@ -23,8 +25,17 @@ sealed class NetworkTrustState {
     /** Location permission missing and the user hasn't said "not now" yet — show the rationale. */
     object NeedsPermission : NetworkTrustState()
 
-    /** SSID unreadable (mobile data, location off, permission declined) — Remote, silently. */
+    /** SSID unreadable (not on Wi-Fi, permission declined, or a platform lookup failure) — Remote, silently. */
     object Unavailable : NetworkTrustState()
+
+    /**
+     * On Wi-Fi, permission granted, but the phone's system-wide Location toggle is off — the
+     * SSID can't be read regardless of app permission. Split out from [Unavailable] because,
+     * unlike the other silent cases, this one is worth surfacing: the user already did their
+     * part (granted the permission), they're actually on a Wi-Fi network so there's something
+     * to gain, and there's a concrete fix (flip the system toggle).
+     */
+    object LocationServicesOff : NetworkTrustState()
 
     /**
      * NotApplicable also allows Local: with no Local Host configured the resolver skips the
@@ -55,7 +66,28 @@ object NetworkTrustGate {
             }
         }
 
-        val ssid = WifiNetworkMonitor.currentSsid(context) ?: return NetworkTrustState.Unavailable
+        // Everything from here on touches the platform Wi-Fi/location stack, which has shown
+        // real OEM/OS-version quirks (this whole gate exists because of one). A failure
+        // anywhere in this sequence must not abort the caller's whole refresh or escape
+        // uncaught — some callers (e.g. DeviceDetailScreen) have no outer try/catch of their
+        // own and would crash; others would just show a misleading "can't reach relay" error.
+        // Every unreadable-SSID case fails safe to Remote instead, same as the checks above.
+        val ssid = try {
+            if (!WifiNetworkMonitor.isConnectedToWifi(context)) {
+                // Not on Wi-Fi at all (e.g. mobile data) — Location being off is irrelevant
+                // here and telling the user to flip it wouldn't fix anything.
+                return NetworkTrustState.Unavailable
+            }
+            if (!WifiNetworkMonitor.isLocationServicesEnabled(context)) {
+                return NetworkTrustState.LocationServicesOff
+            }
+            WifiNetworkMonitor.currentSsid(context)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Wi-Fi network check failed — falling back to Remote", e)
+            null
+        } ?: return NetworkTrustState.Unavailable
 
         return when (trust.getDecision(ssid)) {
             true -> NetworkTrustState.Trusted
@@ -63,4 +95,6 @@ object NetworkTrustGate {
             null -> NetworkTrustState.Unknown(ssid)
         }
     }
+
+    private const val TAG = "NetworkTrustGate"
 }

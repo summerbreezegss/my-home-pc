@@ -29,6 +29,7 @@ sealed class TrustDialog {
     object None : TrustDialog()
     object PermissionRationale : TrustDialog()
     data class TrustNetwork(val ssid: String) : TrustDialog()
+    object LocationServicesOff : TrustDialog()
 }
 
 class DeviceListViewModel(application: Application) : AndroidViewModel(application) {
@@ -45,6 +46,11 @@ class DeviceListViewModel(application: Application) : AndroidViewModel(applicati
     // don't re-ask until the next app start.
     private val dismissedThisSession = mutableSetOf<String>()
 
+    // The Location-services-off notice has no per-network identity and no permanent "no" —
+    // it's live system state, so dismissing it just quiets it for this session rather than
+    // recording a decision.
+    private var locationServicesOffDismissedThisSession = false
+
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = DeviceListUiState.Loading
@@ -59,6 +65,8 @@ class DeviceListViewModel(application: Application) : AndroidViewModel(applicati
                         TrustDialog.PermissionRationale
                     trustState is NetworkTrustState.Unknown && trustState.ssid !in dismissedThisSession ->
                         TrustDialog.TrustNetwork(trustState.ssid)
+                    trustState is NetworkTrustState.LocationServicesOff && !locationServicesOffDismissedThisSession ->
+                        TrustDialog.LocationServicesOff
                     else -> TrustDialog.None
                 }
 
@@ -104,6 +112,12 @@ class DeviceListViewModel(application: Application) : AndroidViewModel(applicati
     /** Dismissed without deciding (tap outside/back) — no record kept; ask again next session. */
     fun onTrustPromptDismissed(ssid: String) {
         dismissedThisSession += ssid
+        _trustDialog.value = TrustDialog.None
+    }
+
+    /** Dismissed or "Not now" on the Location-services notice — quiet for this session only. */
+    fun onLocationServicesOffDismissed() {
+        locationServicesOffDismissedThisSession = true
         _trustDialog.value = TrustDialog.None
     }
 

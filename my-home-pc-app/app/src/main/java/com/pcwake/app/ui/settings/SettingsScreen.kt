@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,13 +39,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pcwake.app.R
+import com.pcwake.app.data.WifiNetworkMonitor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,11 +63,26 @@ fun SettingsScreen(
     val savedConfirmation by viewModel.savedConfirmation.collectAsState()
     val trustedNetworks by viewModel.trustedNetworks.collectAsState()
     val wifiCheckDeclined by viewModel.wifiCheckDeclined.collectAsState()
+    val locationServicesOff by viewModel.locationServicesOff.collectAsState()
     var tokenVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val wifiPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> viewModel.onWifiPermissionResult(granted) }
+
+    // Location services can only be toggled from the system Settings app, so re-check on
+    // return — otherwise the hint above would stay stale until the screen is reopened.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.reloadTrust()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
@@ -165,6 +186,24 @@ fun SettingsScreen(
                         viewModel.enableWifiCheck()
                         wifiPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                     }) { Text("Turn on") }
+                }
+            }
+
+            if (locationServicesOff) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Location services are off on this device, so the Wi-Fi check can't " +
+                            "run even though permission is granted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        WifiNetworkMonitor.openLocationSettings(context)
+                    }) { Text("Open Settings") }
                 }
             }
 
