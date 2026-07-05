@@ -16,11 +16,16 @@ sealed class RelayConnection {
 object RelayConnectionResolver {
     private const val LOCAL_PROBE_TIMEOUT_SECONDS = 2L
 
-    suspend fun resolve(repository: SettingsRepository): RelayConnection {
+    /**
+     * [allowLocal] comes from [NetworkTrustGate]: the Local probe (and the bearer-token
+     * traffic that follows it) only happens on a Wi-Fi network the user has trusted.
+     * Deliberately no default value — every caller must have consulted the gate.
+     */
+    suspend fun resolve(repository: SettingsRepository, allowLocal: Boolean): RelayConnection {
         val localHost = repository.getLocalHost()
         val port = repository.getPort()
 
-        if (localHost.isNotBlank()) {
+        if (allowLocal && localHost.isNotBlank()) {
             val localApi = RelayClient.create(localHost, port, connectTimeoutSeconds = LOCAL_PROBE_TIMEOUT_SECONDS)
             try {
                 localApi.health()

@@ -53,6 +53,8 @@ Decide how you'll reach the relay from outside your home network — any VPN mes
 
 Build/install `my-home-pc-app/` (`cd my-home-pc-app && ./gradlew installDebug` with a device connected, or open the project in Android Studio). On first launch, open Settings and enter: a **Local** host (your relay's LAN IP) and a **Remote** host (whatever you set up in step 3) — same port and token either way. Test Connection will confirm which path it's using.
 
+If you set a Local host, the app will ask two one-time questions when you're on your home Wi-Fi: permission to check which Wi-Fi network you're on (Android reports this through the location permission — the app never reads your actual location), and whether to trust that network. The Local shortcut only runs on networks you've trusted; everywhere else the app quietly uses Remote. You can review trusted networks any time in Settings.
+
 This alone gives you full remote Wake + status checking. **Stop here if that's all you want** — everything below is only for Restart/Shutdown.
 
 ### 5. (Optional) Install the PC Agent, for Restart/Shutdown

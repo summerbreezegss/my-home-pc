@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.pcwake.app.data.NetworkTrustGate
+import com.pcwake.app.data.NetworkTrustRepository
 import com.pcwake.app.data.RelayClient
 import com.pcwake.app.data.RelayConnection
 import com.pcwake.app.data.SettingsRepository
@@ -23,6 +25,7 @@ sealed class ConnectionTestState {
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SettingsRepository(application)
+    private val trustRepository = NetworkTrustRepository(application)
 
     var localHost by mutableStateOf(repository.getLocalHost())
     var remoteHost by mutableStateOf(repository.getRemoteHost())
@@ -34,6 +37,41 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _savedConfirmation = MutableStateFlow(false)
     val savedConfirmation: StateFlow<Boolean> = _savedConfirmation
+
+    /** Decided networks (SSID → trusted), for the Trusted Networks section. */
+    private val _trustedNetworks = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val trustedNetworks: StateFlow<Map<String, Boolean>> = _trustedNetworks
+
+    /** True when the user said "not now" to the Wi-Fi check — Settings offers the way back in. */
+    private val _wifiCheckDeclined = MutableStateFlow(false)
+    val wifiCheckDeclined: StateFlow<Boolean> = _wifiCheckDeclined
+
+    init {
+        reloadTrust()
+    }
+
+    private fun reloadTrust() {
+        _trustedNetworks.value = trustRepository.getDecisions()
+        _wifiCheckDeclined.value = trustRepository.isPermissionDeclined()
+    }
+
+    fun setNetworkTrusted(ssid: String, trusted: Boolean) {
+        trustRepository.setDecision(ssid, trusted)
+        reloadTrust()
+    }
+
+    /** Re-enables the Wi-Fi check; the screen follows up with the system permission request. */
+    fun enableWifiCheck() {
+        trustRepository.setPermissionDeclined(false)
+        reloadTrust()
+    }
+
+    fun onWifiPermissionResult(granted: Boolean) {
+        if (!granted) {
+            trustRepository.setPermissionDeclined(true)
+        }
+        reloadTrust()
+    }
 
     /**
      * Normalizes what people actually paste into a host field — a copied URL with a scheme,
@@ -81,8 +119,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             _testState.value = ConnectionTestState.Testing
             try {
                 // Test against whatever is currently typed in, not the saved repository values,
-                // so the user can verify edits before committing them with Save.
-                val connection = if (localHost.isNotBlank()) {
+                // so the user can verify edits before committing them with Save. The Local
+                // attempt is gated on network trust just like the real resolver — Test
+                // Connection sends the token too.
+                val trustState = NetworkTrustGate.evaluate(
+                    getApplication(),
+                    localHost.isNotBlank(),
+                    trustRepository
+                )
+                val connection = if (localHost.isNotBlank() && trustState.allowsLocal) {
                     val localApi = RelayClient.create(localHost, port, connectTimeoutSeconds = 2)
                     try {
                         localApi.health()

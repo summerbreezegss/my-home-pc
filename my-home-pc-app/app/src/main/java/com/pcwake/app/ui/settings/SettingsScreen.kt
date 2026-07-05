@@ -1,15 +1,21 @@
 package com.pcwake.app.ui.settings
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -20,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -31,11 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.pcwake.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +55,13 @@ fun SettingsScreen(
 ) {
     val testState by viewModel.testState.collectAsState()
     val savedConfirmation by viewModel.savedConfirmation.collectAsState()
+    val trustedNetworks by viewModel.trustedNetworks.collectAsState()
+    val wifiCheckDeclined by viewModel.wifiCheckDeclined.collectAsState()
     var tokenVisible by remember { mutableStateOf(false) }
+
+    val wifiPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> viewModel.onWifiPermissionResult(granted) }
 
     Scaffold(
         topBar = {
@@ -66,7 +81,8 @@ fun SettingsScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .padding(16.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedTextField(
@@ -132,7 +148,65 @@ fun SettingsScreen(
                 ConnectionTestState.Idle -> {}
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Text("Trusted Networks", style = MaterialTheme.typography.titleMedium)
+
+            if (wifiCheckDeclined) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Wi-Fi check is off, so the Local shortcut stays disabled.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        viewModel.enableWifiCheck()
+                        wifiPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    }) { Text("Turn on") }
+                }
+            }
+
+            if (trustedNetworks.isEmpty()) {
+                Text(
+                    "Networks appear here after MyHomePC asks about them. The Local shortcut " +
+                        "is only used on networks you've marked trusted.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                trustedNetworks.entries.sortedBy { it.key.lowercase() }.forEach { (ssid, trusted) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_wifi),
+                            contentDescription = null,
+                            tint = if (trusted) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(ssid, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (trusted) "Trusted · Local enabled" else "Not trusted · Remote only",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (trusted) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = trusted,
+                            onCheckedChange = { viewModel.setNetworkTrusted(ssid, it) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (savedConfirmation) {
                 Text("✓ Settings saved", color = MaterialTheme.colorScheme.primary)

@@ -4,6 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pcwake.app.data.Device
+import com.pcwake.app.data.NetworkTrustGate
+import com.pcwake.app.data.NetworkTrustRepository
+import com.pcwake.app.data.NetworkTrustState
 import com.pcwake.app.data.RelayConnectionResolver
 import com.pcwake.app.data.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,17 +24,45 @@ sealed class DeviceListUiState {
     data class Error(val message: String) : DeviceListUiState()
 }
 
+/** Which trust-related dialog the device list should show, if any. */
+sealed class TrustDialog {
+    object None : TrustDialog()
+    object PermissionRationale : TrustDialog()
+    data class TrustNetwork(val ssid: String) : TrustDialog()
+}
+
 class DeviceListViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SettingsRepository(application)
+    private val trustRepository = NetworkTrustRepository(application)
 
     private val _uiState = MutableStateFlow<DeviceListUiState>(DeviceListUiState.Loading)
     val uiState: StateFlow<DeviceListUiState> = _uiState
+
+    private val _trustDialog = MutableStateFlow<TrustDialog>(TrustDialog.None)
+    val trustDialog: StateFlow<TrustDialog> = _trustDialog
+
+    // Networks whose prompt was dismissed without a decision (tap outside/back) —
+    // don't re-ask until the next app start.
+    private val dismissedThisSession = mutableSetOf<String>()
 
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = DeviceListUiState.Loading
             try {
-                val connection = RelayConnectionResolver.resolve(repository)
+                val trustState = NetworkTrustGate.evaluate(
+                    getApplication(),
+                    repository.getLocalHost().isNotBlank(),
+                    trustRepository
+                )
+                _trustDialog.value = when {
+                    trustState is NetworkTrustState.NeedsPermission ->
+                        TrustDialog.PermissionRationale
+                    trustState is NetworkTrustState.Unknown && trustState.ssid !in dismissedThisSession ->
+                        TrustDialog.TrustNetwork(trustState.ssid)
+                    else -> TrustDialog.None
+                }
+
+                val connection = RelayConnectionResolver.resolve(repository, trustState.allowsLocal)
                 val api = connection.api
                 val authHeader = "Bearer ${repository.getToken()}"
                 val devices = api.listDevices(authHeader).devices
@@ -58,6 +89,48 @@ class DeviceListViewModel(application: Application) : AndroidViewModel(applicati
             } catch (e: Exception) {
                 _uiState.value = DeviceListUiState.Error("Can't reach relay: ${e.message}")
             }
+        }
+    }
+
+    /** Trust / Not now on the network prompt — both are recorded; Settings can reverse either. */
+    fun onTrustDecision(ssid: String, trusted: Boolean) {
+        trustRepository.setDecision(ssid, trusted)
+        _trustDialog.value = TrustDialog.None
+        if (trusted) {
+            refresh() // switch to the Local path right away
+        }
+    }
+
+    /** Dismissed without deciding (tap outside/back) — no record kept; ask again next session. */
+    fun onTrustPromptDismissed(ssid: String) {
+        dismissedThisSession += ssid
+        _trustDialog.value = TrustDialog.None
+    }
+
+    /** "Continue" on the rationale — the screen launches the system dialog; hide ours. */
+    fun onRationaleAccepted() {
+        _trustDialog.value = TrustDialog.None
+    }
+
+    /** Rationale dismissed without deciding (tap outside/back) — it may return next refresh. */
+    fun onRationaleDismissed() {
+        _trustDialog.value = TrustDialog.None
+    }
+
+    /**
+     * "Not now" on the rationale, or a denial in the system dialog — remembered so the app
+     * stops asking. The Trusted Networks section in Settings is the way back in.
+     */
+    fun onPermissionDeclined() {
+        trustRepository.setPermissionDeclined(true)
+        _trustDialog.value = TrustDialog.None
+    }
+
+    fun onPermissionResult(granted: Boolean) {
+        if (granted) {
+            refresh()
+        } else {
+            onPermissionDeclined()
         }
     }
 }

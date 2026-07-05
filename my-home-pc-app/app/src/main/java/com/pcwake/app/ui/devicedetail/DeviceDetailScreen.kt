@@ -45,6 +45,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.pcwake.app.R
+import com.pcwake.app.data.NetworkTrustGate
+import com.pcwake.app.data.NetworkTrustRepository
 import com.pcwake.app.data.RelayApi
 import com.pcwake.app.data.RelayConnectionResolver
 import com.pcwake.app.data.SettingsRepository
@@ -81,6 +83,7 @@ fun DeviceDetailScreen(
 ) {
     val context = LocalContext.current
     val repository = remember { SettingsRepository(context) }
+    val trustRepository = remember { NetworkTrustRepository(context) }
     val authHeader = remember { "Bearer ${repository.getToken()}" }
     val scope = rememberCoroutineScope()
 
@@ -102,7 +105,14 @@ fun DeviceDetailScreen(
     }
 
     suspend fun reconnectAndRefresh() {
-        val connection = RelayConnectionResolver.resolve(repository)
+        // Prompting about unknown networks is the device list's job; here the trust
+        // state is applied silently — untrusted or undecided just means Remote.
+        val trustState = NetworkTrustGate.evaluate(
+            context,
+            repository.getLocalHost().isNotBlank(),
+            trustRepository
+        )
+        val connection = RelayConnectionResolver.resolve(repository, trustState.allowsLocal)
         api = connection.api
         connectionLabel = connection.displayName
         refreshStatus()
