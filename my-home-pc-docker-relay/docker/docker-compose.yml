@@ -6,3 +6,5 @@ services:
     env_file: .env
     volumes:
       - ./devices.yaml:/app/devices.yaml:ro
+      # Writable home for last_seen.json so device history survives container rebuilds.
+      - ./data:/app/data

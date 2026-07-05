@@ -44,12 +44,15 @@ def client(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("RELAY_API_TOKEN", "test-token")
     monkeypatch.setenv("AGENT_SHARED_SECRET", "test-agent-secret")
+    monkeypatch.setenv("RELAY_LAST_SEEN_FILE", str(tmp_path / "last_seen.json"))
 
-    from app import config
+    from app import config, ratelimit, status
 
     config.DEVICES_FILE = Path(str(devices_file))
     config.get_settings.cache_clear()
     config.load_devices.cache_clear()
+    ratelimit.reset()  # every test starts with a clean failure ledger
+    status._last_seen = None  # force re-read from (this test's) file
 
     from app.main import app
 
@@ -171,6 +174,81 @@ def test_shutdown_returns_502_when_agent_unreachable(client, monkeypatch):
     resp = client.post("/api/v1/devices/pc-agent/shutdown", headers={"Authorization": "Bearer test-token"})
     assert resp.status_code == 502
     assert resp.json()["detail"] == "agent_unreachable"
+
+
+def test_repeated_auth_failures_lock_out_the_source(client):
+    for _ in range(5):
+        assert client.get("/api/v1/devices", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    # Sixth attempt: locked out — and a now-correct token is refused too, so the
+    # lockout can't be used as a guessing oracle.
+    resp = client.get("/api/v1/devices", headers={"Authorization": "Bearer wrong"})
+    assert resp.status_code == 429
+    assert "Retry-After" in resp.headers
+    assert client.get("/api/v1/devices", headers={"Authorization": "Bearer test-token"}).status_code == 429
+
+
+def test_successful_auth_resets_failure_count(client):
+    for _ in range(4):
+        client.get("/api/v1/devices", headers={"Authorization": "Bearer wrong"})
+    assert client.get("/api/v1/devices", headers={"Authorization": "Bearer test-token"}).status_code == 200
+    # Counter reset: four more failures are still 401 (not the fifth+ of a running streak).
+    for _ in range(4):
+        assert client.get("/api/v1/devices", headers={"Authorization": "Bearer wrong"}).status_code == 401
+
+
+def test_auth_rejections_are_logged_with_source(client, caplog):
+    with caplog.at_level("WARNING", logger="relay.auth"):
+        client.get("/api/v1/devices", headers={"Authorization": "Bearer wrong"})
+    assert any("auth rejected" in r.message and "ip=" in r.message for r in caplog.records)
+
+
+def test_last_seen_survives_restart(client, monkeypatch, tmp_path):
+    from app import status
+
+    monkeypatch.setattr(status, "ping_host", lambda ip, timeout_s=1.0: True)
+    body = client.get("/api/v1/devices/pc-main/status", headers={"Authorization": "Bearer test-token"}).json()
+    assert body["last_seen"] is not None
+    recorded = body["last_seen"]
+
+    # Simulate a container restart: in-memory cache gone, file remains.
+    status._last_seen = None
+    monkeypatch.setattr(status, "ping_host", lambda ip, timeout_s=1.0: False)
+    body = client.get("/api/v1/devices/pc-main/status", headers={"Authorization": "Bearer test-token"}).json()
+    assert body["online"] is False
+    assert body["last_seen"] == recorded
+
+
+def test_agent_reachable_null_without_agent(client, monkeypatch):
+    from app import status
+
+    monkeypatch.setattr(status, "ping_host", lambda ip, timeout_s=1.0: True)
+    body = client.get("/api/v1/devices/pc-main/status", headers={"Authorization": "Bearer test-token"}).json()
+    assert body["agent_reachable"] is None
+
+
+def test_agent_reachable_probes_agent_health(client, monkeypatch):
+    from app import status
+
+    monkeypatch.setattr(status, "ping_host", lambda ip, timeout_s=1.0: True)
+    monkeypatch.setattr(status, "probe_agent", lambda device, timeout_s=1.5: True)
+    body = client.get("/api/v1/devices/pc-agent/status", headers={"Authorization": "Bearer test-token"}).json()
+    assert body["agent_reachable"] is True
+
+    monkeypatch.setattr(status, "probe_agent", lambda device, timeout_s=1.5: False)
+    body = client.get("/api/v1/devices/pc-agent/status", headers={"Authorization": "Bearer test-token"}).json()
+    assert body["agent_reachable"] is False
+
+
+def test_agent_reachable_false_when_host_offline_without_probing(client, monkeypatch):
+    from app import status
+
+    def must_not_probe(device, timeout_s=1.5):
+        raise AssertionError("probe_agent must not be called for an offline host")
+
+    monkeypatch.setattr(status, "ping_host", lambda ip, timeout_s=1.0: False)
+    monkeypatch.setattr(status, "probe_agent", must_not_probe)
+    body = client.get("/api/v1/devices/pc-agent/status", headers={"Authorization": "Bearer test-token"}).json()
+    assert body["agent_reachable"] is False
 
 
 def test_shutdown_returns_502_when_agent_port_missing(client):

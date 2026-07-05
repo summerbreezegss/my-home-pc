@@ -50,12 +50,25 @@ developer's LAN IP and MagicDNS name into distributed APKs) are now in the works
 
 ## Phase 2 — Relay/agent hardening
 
-- [ ] **Rate limiting + 401 logging (relay)** — throttle repeated auth failures, log each rejection
-  (timestamp + source) for an audit trail.
-- [ ] **Rate limiting + 401 logging (agent)** — same treatment for `AGENT_SHARED_SECRET` guesses.
-- [ ] **Persist `last_seen`** — survives container restarts (tiny file) instead of resetting to null.
-- [ ] **`agent_reachable` pass-through** — status endpoint actually checks agent `/health` instead of
-  always returning null (already reserved in the API contract).
+Status 2026-07-05: all items implemented. Relay tests pass (25/25, incl. seven new); agent
+builds clean and its lockout was smoke-tested live on a local port (5×401 then 429, audit
+lines with source IP in the log — wrong secrets only, against a throwaway instance).
+Awaiting live verification: relay redeploy + `curl` checks on the NAS (incl. the new
+`data/` volume for `last_seen.json`), agent rebuild/reinstall on the PC, and checking
+`agent_reachable`/persisted `last_seen` in the app.
+
+- [x] **Rate limiting + 401 logging (relay)** — 5 consecutive failures per source IP → 429 +
+  `Retry-After` for 5 min (correct token included, so the lockout isn't a guessing oracle);
+  tunable via `RELAY_AUTH_MAX_FAILURES`/`RELAY_AUTH_LOCKOUT_SECONDS`; every rejection logged
+  with timestamp + source IP + path (new `app/ratelimit.py`, dependency-free, in-memory).
+- [x] **Rate limiting + 401 logging (agent)** — same scheme in `Program.cs`; rejections land in
+  the Windows Application event log (timestamped) via the service's default logging.
+- [x] **Persist `last_seen`** — atomic-write JSON at `data/last_seen.json`, volume-mounted in
+  docker-compose so it survives rebuilds; corrupt/missing file degrades to empty, never crashes.
+- [x] **`agent_reachable` pass-through** — probes agent `/health` (1.5 s timeout) when the device
+  has an `agent_port`; `null` without one; `false` without probing when ping already failed.
+  API contract updated (plus corrected the stale `/devices` example that still showed internal
+  fields).
 
 ## Phase 3 — App: SSID-gated Local probe
 

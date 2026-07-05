@@ -4,6 +4,8 @@ Base URL: `http://<relay-host>:<port>/api/v1` — `<relay-host>` is whichever of
 
 Auth: every endpoint except `/health` requires `Authorization: Bearer <RELAY_API_TOKEN>`. Missing/invalid token → `401`.
 
+Throttling: after 5 consecutive auth failures from one source IP (tunable via `RELAY_AUTH_MAX_FAILURES` / `RELAY_AUTH_LOCKOUT_SECONDS`), that IP gets `429` with a `Retry-After` header until the lockout window (default 5 minutes) passes — even if it then presents a correct token. Every rejection is logged with timestamp, source IP, and path as the audit trail.
+
 ## `GET /health`
 
 No auth. Liveness check — deliberately reports nothing but liveness (no version or other
@@ -28,15 +30,13 @@ List registered devices (from `my-home-pc-docker-relay/docker/devices.yaml`).
     {
       "id": "pc-main",
       "name": "My Desktop",
-      "mac": "AA:BB:CC:DD:EE:FF",
-      "lan_ip": "192.168.1.50",
-      "broadcast": "192.168.1.255",
-      "agent_port": 8585,
       "capabilities": ["wake", "status", "shutdown", "restart"]
     }
   ]
 }
 ```
+
+Deliberately app-facing fields only — MAC, LAN IP, broadcast, and agent port are internal network details that stay inside the relay (`devices.yaml`).
 
 `capabilities` gates which actions the Android UI shows for a device. `"shutdown"`/`"restart"` should only be listed once `my-home-pc-agent` is installed and verified on that PC — see its README. `"sleep"` is a recognized value in the schema but has no agent route built yet.
 
@@ -65,7 +65,8 @@ Request body: {}
 ```
 
 - `method`: currently always `"ping"`.
-- `agent_reachable`: reserved for a future health-check pass-through — always `null` today.
+- `last_seen`: last time the device answered a ping, ISO-8601 UTC; persisted on the relay so it survives container restarts. `null` only if the device has never been seen.
+- `agent_reachable`: `null` when the device has no `agent_port` configured; otherwise the result of probing the agent's `/health`. A device that fails ping reports `false` without a probe.
 
 ## `POST /devices/{id}/shutdown` / `POST /devices/{id}/restart`
 
@@ -97,11 +98,14 @@ No hostname or other machine details — this endpoint is unauthenticated.
 { "status": "ok" }
 ```
 
+Throttling: same scheme as the relay — 5 consecutive bad-secret attempts from one source IP lock that IP out with `429` for 5 minutes, correct secret or not, and every rejection is logged (timestamp + source IP + path) to the Windows Application event log.
+
 ## `POST /shutdown`
 
 ```
 202 Accepted   { "result": "shutdown_scheduled", "delay_seconds": 5 }
 401 Unauthorized
+429 Too Many Requests
 ```
 
 Schedules `shutdown.exe /s /t 5` and returns immediately — the 5-second delay gives the HTTP response time to actually get sent before the OS starts tearing things down.
@@ -111,6 +115,7 @@ Schedules `shutdown.exe /s /t 5` and returns immediately — the 5-second delay 
 ```
 202 Accepted   { "result": "restart_scheduled", "delay_seconds": 5 }
 401 Unauthorized
+429 Too Many Requests
 ```
 
 Schedules `shutdown.exe /r /t 5`, same reasoning as `/shutdown`.
