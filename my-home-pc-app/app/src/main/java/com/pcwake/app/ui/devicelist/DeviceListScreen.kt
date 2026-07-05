@@ -1,5 +1,8 @@
 package com.pcwake.app.ui.devicelist
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -34,11 +39,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.pcwake.app.R
 import com.pcwake.app.ui.statusColor
 import com.pcwake.app.ui.statusText
 
@@ -50,6 +57,58 @@ fun DeviceListScreen(
     viewModel: DeviceListViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val trustDialog by viewModel.trustDialog.collectAsState()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> viewModel.onPermissionResult(granted) }
+
+    when (val dialog = trustDialog) {
+        TrustDialog.PermissionRationale -> AlertDialog(
+            onDismissRequest = { viewModel.onRationaleDismissed() },
+            icon = { Icon(painterResource(R.drawable.ic_wifi), contentDescription = null) },
+            title = { Text("Check Wi-Fi network?") },
+            text = {
+                Text(
+                    "To safely use the Local shortcut, MyHomePC needs to see which Wi-Fi " +
+                        "network you're on. Android requires location permission for this — " +
+                        "MyHomePC doesn't track or store your location."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onRationaleAccepted()
+                    permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                }) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onPermissionDeclined() }) { Text("Not now") }
+            }
+        )
+        is TrustDialog.TrustNetwork -> AlertDialog(
+            onDismissRequest = { viewModel.onTrustPromptDismissed(dialog.ssid) },
+            icon = { Icon(painterResource(R.drawable.ic_wifi), contentDescription = null) },
+            title = { Text("Trust this network?") },
+            text = {
+                Text(
+                    "You're on \"${dialog.ssid}\", a network MyHomePC hasn't seen before. " +
+                        "Trust it to enable the faster Local connection here. Until then, " +
+                        "MyHomePC keeps using Remote — nothing else changes."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.onTrustDecision(dialog.ssid, trusted = true) }) {
+                    Text("Trust this network")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onTrustDecision(dialog.ssid, trusted = false) }) {
+                    Text("Not now")
+                }
+            }
+        )
+        TrustDialog.None -> {}
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {

@@ -26,7 +26,9 @@ The relay is configured with **two possible addresses** — a Local one (typical
 - Away from home, it falls back to whatever Remote address you've configured.
 - The app and relay don't care *how* the Remote address is made reachable — that's entirely up to how you've set up your own network. This project's own reference deployment uses Tailscale for that part, but nothing in the app or relay is Tailscale-specific.
 
-See `RelayConnectionResolver` (`my-home-pc-app/app/src/main/java/com/pcwake/app/data/RelayConnectionResolver.kt`) for the fallback logic.
+**The Local attempt is gated to trusted Wi-Fi networks.** Private LAN addresses aren't unique across networks, so on an unknown network "whatever answers at the Local IP" could be someone else's device — and every request after a successful probe carries the bearer token. The app therefore only tries Local on Wi-Fi networks the user has explicitly trusted: the first time it sees an unrecognized network (and a Local Host is configured), it asks "Trust this network?", remembers the answer, and lets the user review or reverse decisions in Settings → Trusted Networks. Reading the Wi-Fi name requires Android's location permission (requested with an in-app rationale first); if the permission is missing, location is off, or the phone is on mobile data, the app just uses Remote. Every undecided or negative state falls back to Remote, which works from anywhere — so the gate can never make the app unusable.
+
+See `RelayConnectionResolver` (`my-home-pc-app/app/src/main/java/com/pcwake/app/data/RelayConnectionResolver.kt`) for the fallback logic and `NetworkTrustGate` (same folder) for the trust decision.
 
 ## Data flow per feature
 

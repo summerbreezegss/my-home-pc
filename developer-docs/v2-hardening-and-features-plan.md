@@ -50,12 +50,14 @@ developer's LAN IP and MagicDNS name into distributed APKs) are now in the works
 
 ## Phase 2 — Relay/agent hardening
 
-Status 2026-07-05: all items implemented. Relay tests pass (25/25, incl. seven new); agent
-builds clean and its lockout was smoke-tested live on a local port (5×401 then 429, audit
-lines with source IP in the log — wrong secrets only, against a throwaway instance).
-Awaiting live verification: relay redeploy + `curl` checks on the NAS (incl. the new
-`data/` volume for `last_seen.json`), agent rebuild/reinstall on the PC, and checking
-`agent_reachable`/persisted `last_seen` in the app.
+Status 2026-07-05: all items implemented and committed. Relay tests pass (25/25, incl. seven
+new). Both lockouts verified against the *live* deployments: the reinstalled agent via
+Postman (user) and the redeployed NAS relay via wrong-token curl probes (5×401 then 429).
+Verification detour: the first agent lockout test saw only 401s because the installed service
+was still the pre-Phase-2 build — same stale-deploy lesson as ever; rebuilt installer fixed it.
+Lighter remaining checks (not re-confirmed explicitly): `last_seen` surviving a container
+restart and `agent_reachable: true` via an authenticated `curl`. Server components shipped as
+zips on the v0.2 GitHub release (see below).
 
 - [x] **Rate limiting + 401 logging (relay)** — 5 consecutive failures per source IP → 429 +
   `Retry-After` for 5 min (correct token included, so the lockout isn't a guessing oracle);
@@ -72,10 +74,23 @@ Awaiting live verification: relay redeploy + `curl` checks on the NAS (incl. the
 
 ## Phase 3 — App: SSID-gated Local probe
 
-- [ ] **Known-network check for the Local probe** — the app currently sends the bearer token to whatever
-  answers `/health` at the configured Local IP, on any network. Fix: user picks home SSID(s) in
-  Settings; the Local probe only runs when connected to one. Requires runtime location permission —
-  the permission UX gets its own on-device test cycle, hence its own phase.
+Status 2026-07-05: COMPLETE — implemented and live-verified on the S24 Ultra (full test
+sequence: permission flow, trust prompt, Local/Remote switching via the Settings toggles,
+silent Remote fallback on mobile data, fresh prompt + "Not now" on a second network).
+Design changed from the original "user picks home SSID(s) in Settings" to an OS-style
+**trust-on-first-encounter** flow (user's call during scoping): on an unrecognized Wi-Fi
+network the app prompts "Trust this network?"; decisions accumulate in an encrypted
+SSID→trusted store, reviewable/reversible via a Trusted Networks section in Settings.
+Unknown/untrusted/undecidable (no permission, location off, mobile data) all silently use
+Remote, so no state can break the app. Debug + R8 release builds both compile; unit tests
+cover the trust-map codec and SSID normalization (reflection-free Gson, no new keep rules).
+
+- [x] **Known-network check for the Local probe** — the app previously sent the bearer token to
+  whatever answered `/health` at the configured Local IP, on any network. Now every Local probe
+  (device list, device detail, and Settings' Test Connection — all three call sites) is gated by
+  `NetworkTrustGate`: only networks the user explicitly trusted allow it. Runtime location
+  permission (Android's requirement for reading the SSID) is requested with a rationale dialog,
+  only once a Local Host is configured; declining is remembered and reversible in Settings.
 
 ## Phase 4 — Features
 
