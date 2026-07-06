@@ -126,14 +126,61 @@ than shipping as v0.4, since the as-published v0.3 had a real, user-facing gap.
 
 ## Phase 4 — Features
 
-Order within the phase:
+Scope revised 2026-07-06 (user decision, mockups approved via artifact before build): biometric
+confirm and the `sleep` capability are **dropped** — not deferred within this phase, out of v2
+entirely unless re-requested. What remains is app-only (no relay or agent changes, nothing to
+redeploy on the NAS or PC). A "Default Device" setting was added to the scope because the
+tile/widget fire a single device with a single tap, and with more than one device configured
+something has to resolve which device that is — without guessing.
 
-- [ ] **Biometric confirm for shutdown/restart** — `BiometricPrompt` on top of the existing dialog.
-- [ ] **Notify when PC is up/down** — WorkManager polls `/status` after wake/shutdown, posts a
-  notification on the transition.
-- [ ] **Quick Settings tile / widget** — one-tap Wake without opening the app.
-- [ ] **`sleep` capability** — last because it's the only feature touching all three components
-  (new agent route + relay capability + app button) and requires redeploying the agent to the PC.
+**Status 2026-07-06: COMPLETE — implemented and live-verified on the S24 Ultra.** All three
+items built, unit tests pass, debug and R8 release builds both compile.
+
+**Widget bugs found and fixed during live verification**: the freshly-built widget failed to
+add at all ("Couldn't add widget") — root cause was `widget_wake.xml`'s divider using a plain
+`<View>`, which RemoteViews' filtered inflater rejects (only `@RemoteView`-annotated classes
+inflate; `android.view.View` isn't one). Fixed by switching the divider to a 1dp `ImageView`
+with a background color. The first retest still failed identically — turned out to be a
+stale sideloaded debug APK built minutes *before* the fix (same versionCode, so the failure
+looked like a real regression); `aapt2 dump xmltree` on both APKs proved the divider element
+differed between them. Rebuilding and reinstalling resolved it.
+
+Once the widget rendered, three further state-tracking bugs surfaced during live wake testing:
+(1) the background status-polling worker re-rendered the widget on its very first 5-second
+poll, before the PC had finished booting, stomping "Wake sent…" with "Offline · tap to wake"
+— looked exactly like the tap had failed; (2) the worker's failure/timeout exit paths never
+re-rendered the widget at all, so a failed or timed-out wake left it stuck on "Wake sent…"
+indefinitely; (3) auto-selecting a default device from the Settings screen updated the stored
+value but not the widget, unlike the equivalent path in the device list screen. Fixed by
+adding a persisted "waking" flag (`DeviceStateCache.isWaking/setWaking/clearWaking`, set the
+moment a wake is requested rather than only reflecting the instant of the tap) that the
+widget's render function checks ahead of the cached online/offline state, and by re-rendering
+on every worker exit path (success, failure, and timeout) instead of only the "still polling"
+case. Live-verified: the widget now holds "Wake sent…" through the full boot window on both
+the wake tap and the "Open" button, and the QS tile's wake tap behaves identically since it
+shares the same underlying watch path.
+
+- [x] **Notify when PC is up/down** — after a Wake/Restart/Shutdown is sent, a WorkManager job
+  keeps polling `/status` in the background and posts a notification on the transition to the
+  target state, so the result arrives even with the app closed. Same 12-attempt window as the
+  in-app poll; silent give-up on timeout.
+- [x] **Default Device setting** — Settings gains a radio list of the relay's devices. With
+  exactly one device it's selected automatically; with several, nothing is selected until the
+  user picks (the tile/widget show a not-configured state rather than guessing). Stored as
+  `defaultDeviceId` in `SettingsRepository`; read only by the tile and widget — device list and
+  detail screens are unaffected.
+- [x] **Quick Settings tile / home-screen widget** — both target the Default Device. The widget
+  has two tap targets: **Wake** fires the wake without opening the app (result arrives via the
+  item-1 notification), **Open** launches straight into that device's detail screen. The QS tile
+  is single-tap Wake only, icon state from the last-known online/offline status. With no default
+  set, both surfaces open Settings → Default Device instead.
+
+Dropped from this phase (2026-07-06):
+
+- ~~**Biometric confirm for shutdown/restart**~~ — cut at scoping; the existing confirm dialogs
+  stay as the only gate.
+- ~~**`sleep` capability**~~ — cut at scoping; would have been the only item touching all three
+  components. `capabilities` gating in `devices.yaml` remains ready for it if it returns.
 
 ## Deferred / accepted risks
 

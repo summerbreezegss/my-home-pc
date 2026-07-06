@@ -1,5 +1,10 @@
 package com.pcwake.app.ui.devicedetail
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,10 +46,12 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.pcwake.app.R
+import com.pcwake.app.data.DeviceStateCache
 import com.pcwake.app.data.NetworkTrustGate
 import com.pcwake.app.data.NetworkTrustRepository
 import com.pcwake.app.data.RelayApi
@@ -52,6 +59,8 @@ import com.pcwake.app.data.RelayConnectionResolver
 import com.pcwake.app.data.SettingsRepository
 import com.pcwake.app.ui.statusColor
 import com.pcwake.app.ui.statusText
+import com.pcwake.app.widget.WakeWidgetProvider
+import com.pcwake.app.work.StatusWatch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -84,6 +93,7 @@ fun DeviceDetailScreen(
     val context = LocalContext.current
     val repository = remember { SettingsRepository(context) }
     val trustRepository = remember { NetworkTrustRepository(context) }
+    val stateCache = remember { DeviceStateCache(context) }
     val authHeader = remember { "Bearer ${repository.getToken()}" }
     val scope = rememberCoroutineScope()
 
@@ -94,11 +104,30 @@ fun DeviceDetailScreen(
     var actionState by remember { mutableStateOf<DeviceActionState>(DeviceActionState.Idle) }
     var pendingConfirmation by remember { mutableStateOf<PowerAction?>(null) }
 
+    // The up/down notification is pointless without the permission (Android 13+), so it's
+    // requested at the first power action — the moment the user does the thing that will
+    // produce one. A denial just means the action runs without a notification; the system
+    // remembers the answer, so this is not a nag loop.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* action proceeds either way */ }
+
+    fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     suspend fun refreshStatus() {
         val currentApi = api ?: return
         try {
             val status = currentApi.status(deviceId, authHeader)
             online = status.online
+            stateCache.setOnline(deviceId, status.online)
+            WakeWidgetProvider.updateAll(context)
         } catch (e: Exception) {
             // leave previous known status on a transient failure
         }
@@ -126,6 +155,7 @@ fun DeviceDetailScreen(
 
     fun performAction(action: PowerAction) {
         val currentApi = api ?: return
+        requestNotificationPermissionIfNeeded()
         scope.launch {
             actionState = DeviceActionState.Sending(action)
             try {
@@ -151,8 +181,26 @@ fun DeviceDetailScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                scope.launch { reconnectAndRefresh() }
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    // Back on screen — the in-app poll takes over from any background watcher
+                    // so the user doesn't get notified about a result they're watching live.
+                    StatusWatch.cancel(context, deviceId)
+                    scope.launch { reconnectAndRefresh() }
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    // Leaving mid-action: hand the rest of the poll window to a background
+                    // worker so the outcome still arrives, as a notification.
+                    val inFlight = when (val s = actionState) {
+                        is DeviceActionState.Sending -> s.action
+                        is DeviceActionState.Polling -> s.action
+                        else -> null
+                    }
+                    if (inFlight != null) {
+                        StatusWatch.watch(context, deviceId, deviceName, inFlight.targetOnline)
+                    }
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
