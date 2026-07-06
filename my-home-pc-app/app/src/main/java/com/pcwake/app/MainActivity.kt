@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
@@ -21,9 +22,28 @@ import com.pcwake.app.ui.settings.SettingsScreen
 import com.pcwake.app.ui.theme.PCWakeTheme
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        /** Widget/tile "not configured yet" targets — land on Settings to pick a default device. */
+        const val ACTION_OPEN_SETTINGS = "com.pcwake.app.OPEN_SETTINGS"
+
+        /** Widget "Open" button — land on the default device's detail (resolved at open time). */
+        const val ACTION_OPEN_DEFAULT_DEVICE = "com.pcwake.app.OPEN_DEFAULT_DEVICE"
+
+        /** Status notifications — land on the specific device the notification was about. */
+        const val ACTION_OPEN_DEVICE = "com.pcwake.app.OPEN_DEVICE"
+        const val EXTRA_DEVICE_ID = "device_id"
+        const val EXTRA_DEVICE_NAME = "device_name"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Read once per activity instance: the launching surfaces use CLEAR_TOP, so a re-launch
+        // recreates the activity and a fresh intent lands here.
+        val launchAction = intent?.action
+        val launchDeviceId = intent?.getStringExtra(EXTRA_DEVICE_ID)
+        val launchDeviceName = intent?.getStringExtra(EXTRA_DEVICE_NAME)
         setContent {
             PCWakeTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -69,6 +89,33 @@ class MainActivity : ComponentActivity() {
                                 deviceName = deviceName,
                                 onBack = { navController.popBackStack() }
                             )
+                        }
+                    }
+
+                    // Deep links from the widget, QS tile, and status notifications. Navigated
+                    // on top of the normal start destination so Back behaves as if the user
+                    // got there themselves.
+                    LaunchedEffect(Unit) {
+                        when (launchAction) {
+                            ACTION_OPEN_SETTINGS -> {
+                                if (startDestination != "settings") navController.navigate("settings")
+                            }
+                            ACTION_OPEN_DEFAULT_DEVICE -> {
+                                val id = repository.getDefaultDeviceId()
+                                if (id.isNotBlank()) {
+                                    val name = repository.getDefaultDeviceName().ifBlank { id }
+                                    navController.navigate("deviceDetail/$id/${Uri.encode(name)}")
+                                } else if (startDestination != "settings") {
+                                    // Default was cleared/never set — the closest useful screen.
+                                    navController.navigate("settings")
+                                }
+                            }
+                            ACTION_OPEN_DEVICE -> {
+                                if (!launchDeviceId.isNullOrBlank()) {
+                                    val name = launchDeviceName?.ifBlank { null } ?: launchDeviceId
+                                    navController.navigate("deviceDetail/$launchDeviceId/${Uri.encode(name)}")
+                                }
+                            }
                         }
                     }
                 }

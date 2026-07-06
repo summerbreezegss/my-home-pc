@@ -38,6 +38,8 @@ See `RelayConnectionResolver` (`my-home-pc-app/app/src/main/java/com/pcwake/app/
 
 Wake-on-LAN is one-directional and unacknowledged (UDP, no response from the PC), so the app polls `/status` after sending a wake to detect when the PC actually comes online. Shutdown/Restart get an HTTP response from the agent, but the app still polls afterward to confirm the PC actually went offline (or came back up, for Restart).
 
+**Background watch (widget, tile, closed app)**: the home-screen widget and Quick Settings tile fire a Wake on a single tap without opening the app, so a `WorkManager` job (`DeviceStatusWorker`) takes over the same 12-attempt/5-second poll and posts a notification on the target-state transition — the app doesn't need to be running. It gives up silently on timeout (no "still offline" nag). The widget's own displayed status is driven by the same cache this worker writes to (`DeviceStateCache`), plus a short-lived "waking" flag so the widget shows "Wake sent…" for the whole watch window rather than flashing a stale offline status mid-poll.
+
 ## Why these tech choices
 
 - **Relay: Python + FastAPI.** Glue code (HTTP in, UDP broadcast / ping out), no performance pressure. FastAPI's auto-generated `/docs` (OpenAPI/Swagger UI) doubles as a manual test console during development — gated behind `RELAY_ENABLE_DOCS=true` (off by default) since it advertises the full API surface unauthenticated.

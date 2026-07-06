@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- updatePeriodMillis=0: the widget is re-rendered explicitly (default-device changes,
+     status polls) rather than on a timer — a periodic network poll just for a widget would
+     be battery spend with no user action behind it. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="220dp"
+    android:minHeight="48dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:maxResizeHeight="96dp"
+    android:resizeMode="horizontal"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_wake"
+    android:previewLayout="@layout/widget_wake"
+    android:description="@string/widget_description"
+    android:widgetCategory="home_screen" />

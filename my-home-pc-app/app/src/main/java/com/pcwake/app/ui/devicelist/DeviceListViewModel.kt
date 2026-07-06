@@ -3,12 +3,15 @@ package com.pcwake.app.ui.devicelist
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.pcwake.app.data.DefaultDeviceRules
 import com.pcwake.app.data.Device
+import com.pcwake.app.data.DeviceStateCache
 import com.pcwake.app.data.NetworkTrustGate
 import com.pcwake.app.data.NetworkTrustRepository
 import com.pcwake.app.data.NetworkTrustState
 import com.pcwake.app.data.RelayConnectionResolver
 import com.pcwake.app.data.SettingsRepository
+import com.pcwake.app.widget.WakeWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -35,6 +38,7 @@ sealed class TrustDialog {
 class DeviceListViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SettingsRepository(application)
     private val trustRepository = NetworkTrustRepository(application)
+    private val stateCache = DeviceStateCache(application)
 
     private val _uiState = MutableStateFlow<DeviceListUiState>(DeviceListUiState.Loading)
     val uiState: StateFlow<DeviceListUiState> = _uiState
@@ -76,12 +80,27 @@ class DeviceListViewModel(application: Application) : AndroidViewModel(applicati
                 val devices = api.listDevices(authHeader).devices
                 _uiState.value = DeviceListUiState.Loaded(devices.map { DeviceUiState(it) }, connection.displayName)
 
+                // Keep the tile/widget's default device in step with the live list: auto-pick
+                // when there's exactly one device, refresh a stored name after a rename.
+                DefaultDeviceRules.resolveUpdate(
+                    repository.getDefaultDeviceId(),
+                    repository.getDefaultDeviceName(),
+                    devices
+                )?.let {
+                    repository.setDefaultDevice(it.id, it.name)
+                    WakeWidgetProvider.updateAll(getApplication())
+                }
+
                 devices.forEach { device ->
                     launch {
                         val online = try {
                             api.status(device.id, authHeader).online
                         } catch (e: Exception) {
                             null
+                        }
+                        if (online != null) {
+                            stateCache.setOnline(device.id, online)
+                            WakeWidgetProvider.updateAll(getApplication())
                         }
                         val current = _uiState.value
                         if (current is DeviceListUiState.Loaded) {

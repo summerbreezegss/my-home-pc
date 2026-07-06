@@ -7,4 +7,13 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Widget palette — mirrors ui/theme/Color.kt (NavySurface / AccentBlue / TextOnDark);
+         RemoteViews layouts can't read Compose colors, so these are the same values as
+         resources. Keep in sync if the app theme changes. -->
+    <color name="widget_surface">#FF152A42</color>
+    <color name="widget_accent">#FF0EA5C7</color>
+    <color name="widget_text">#FFE6F1F7</color>
+    <color name="widget_text_dim">#99E6F1F7</color>
+    <color name="widget_divider">#33E6F1F7</color>
 </resources>

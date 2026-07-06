@@ -6,12 +6,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.pcwake.app.data.DefaultDeviceRules
+import com.pcwake.app.data.Device
 import com.pcwake.app.data.NetworkTrustGate
 import com.pcwake.app.data.NetworkTrustRepository
 import com.pcwake.app.data.NetworkTrustState
 import com.pcwake.app.data.RelayClient
 import com.pcwake.app.data.RelayConnection
+import com.pcwake.app.data.RelayConnectionResolver
 import com.pcwake.app.data.SettingsRepository
+import com.pcwake.app.widget.WakeWidgetProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -58,6 +63,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _locationServicesOff = MutableStateFlow(false)
     val locationServicesOff: StateFlow<Boolean> = _locationServicesOff
 
+    /**
+     * Devices available as the tile/widget's default. null = not fetched (unconfigured relay
+     * or fetch failed) — the section shows a hint instead of an empty pick list.
+     */
+    private val _deviceOptions = MutableStateFlow<List<Device>?>(null)
+    val deviceOptions: StateFlow<List<Device>?> = _deviceOptions
+
+    private val _defaultDeviceId = MutableStateFlow(repository.getDefaultDeviceId())
+    val defaultDeviceId: StateFlow<String> = _defaultDeviceId
+
     // No init-time load: the screen's own ON_RESUME observer covers first composition too
     // (Android's Lifecycle replays the current state to a newly added observer), matching
     // how DeviceListViewModel has no init-time load either — avoids a redundant double call.
@@ -70,6 +85,52 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val trustState = NetworkTrustGate.evaluate(getApplication(), localHost.isNotBlank(), trustRepository)
             _locationServicesOff.value = trustState is NetworkTrustState.LocationServicesOff
         }
+        loadDeviceOptions()
+    }
+
+    /**
+     * Fetches the device list for the Default Device section, against the *saved* settings —
+     * unlike Test Connection this isn't about the values currently being typed; the default
+     * device only matters once a working relay config has been saved.
+     */
+    private fun loadDeviceOptions() {
+        if (!repository.isConfigured()) {
+            _deviceOptions.value = null
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val trustState = NetworkTrustGate.evaluate(
+                    getApplication(),
+                    repository.getLocalHost().isNotBlank(),
+                    trustRepository
+                )
+                val api = RelayConnectionResolver.resolve(repository, trustState.allowsLocal).api
+                val devices = api.listDevices("Bearer ${repository.getToken()}").devices
+                // Same auto-select/rename rule as the device list screen, so the section never
+                // shows "nothing chosen" while the widget would in fact wake the only device.
+                DefaultDeviceRules.resolveUpdate(
+                    repository.getDefaultDeviceId(),
+                    repository.getDefaultDeviceName(),
+                    devices
+                )?.let {
+                    repository.setDefaultDevice(it.id, it.name)
+                    WakeWidgetProvider.updateAll(getApplication())
+                }
+                _defaultDeviceId.value = repository.getDefaultDeviceId()
+                _deviceOptions.value = devices
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _deviceOptions.value = null
+            }
+        }
+    }
+
+    fun setDefaultDevice(device: Device) {
+        repository.setDefaultDevice(device.id, device.name)
+        _defaultDeviceId.value = device.id
+        WakeWidgetProvider.updateAll(getApplication())
     }
 
     fun setNetworkTrusted(ssid: String, trusted: Boolean) {
