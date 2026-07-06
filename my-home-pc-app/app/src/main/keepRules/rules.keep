@@ -10,3 +10,16 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# WorkManager (DeviceStatusWorker) keeps its job queue in a Room database. Room
+# instantiates the generated <Name>Database_Impl subclasses reflectively via their
+# no-arg constructor at startup, through androidx.startup.InitializationProvider —
+# which runs before any Activity. R8 full mode (the AGP default) prunes that
+# constructor as "unused", so release builds crash on launch on every device with:
+#   Unable to get provider androidx.startup.InitializationProvider:
+#   NoSuchMethodException: androidx.work.impl.WorkDatabase_Impl.<init>[]
+# Debug builds don't run R8, so this only surfaced in the release APK. Keep the
+# no-arg constructor of every RoomDatabase subclass.
+-keepclassmembers class * extends androidx.room.RoomDatabase {
+    <init>();
+}
