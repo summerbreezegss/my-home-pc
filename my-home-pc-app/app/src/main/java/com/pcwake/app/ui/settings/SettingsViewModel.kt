@@ -117,9 +117,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     repository.setDefaultDevice(it.id, it.name)
                 }
                 // Keep the widget's cached "can shut down" flag current — see DeviceListViewModel.
-                repository.setDefaultDeviceShutdownSupported(
-                    DefaultDeviceRules.defaultSupportsShutdown(repository.getDefaultDeviceId(), devices)
-                )
+                DefaultDeviceRules.defaultSupportsShutdown(repository.getDefaultDeviceId(), devices)?.let {
+                    repository.setDefaultDeviceShutdownSupported(it)
+                }
                 WakeWidgetProvider.updateAll(getApplication())
                 _defaultDeviceId.value = repository.getDefaultDeviceId()
                 _deviceOptions.value = devices

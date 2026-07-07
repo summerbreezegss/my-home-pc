@@ -90,10 +90,12 @@ class DeviceListViewModel(application: Application) : AndroidViewModel(applicati
                     repository.setDefaultDevice(it.id, it.name)
                 }
                 // Refresh the widget's cached "can shut down" flag on every fetch — capabilities
-                // can change without a rename, so this can't ride on resolveUpdate above.
-                repository.setDefaultDeviceShutdownSupported(
-                    DefaultDeviceRules.defaultSupportsShutdown(repository.getDefaultDeviceId(), devices)
-                )
+                // can change without a rename, so this can't ride on resolveUpdate above. A null
+                // result (default missing from this fetch) leaves the cached value as-is, same
+                // fail-safe reasoning as resolveUpdate.
+                DefaultDeviceRules.defaultSupportsShutdown(repository.getDefaultDeviceId(), devices)?.let {
+                    repository.setDefaultDeviceShutdownSupported(it)
+                }
                 WakeWidgetProvider.updateAll(getApplication())
 
                 devices.forEach { device ->

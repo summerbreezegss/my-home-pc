@@ -1,9 +1,7 @@
 package com.pcwake.app.data
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultDeviceRulesTest {
@@ -55,17 +53,23 @@ class DefaultDeviceRulesTest {
 
     @Test
     fun `default supports shutdown when it advertises the capability`() {
-        assertTrue(DefaultDeviceRules.defaultSupportsShutdown("office-pc", listOf(shutdownPc, wakeOnlyPc)))
+        assertEquals(true, DefaultDeviceRules.defaultSupportsShutdown("office-pc", listOf(shutdownPc, wakeOnlyPc)))
     }
 
     @Test
     fun `default does not support shutdown without the capability`() {
-        assertFalse(DefaultDeviceRules.defaultSupportsShutdown("home-pc", listOf(shutdownPc, wakeOnlyPc)))
+        assertEquals(false, DefaultDeviceRules.defaultSupportsShutdown("home-pc", listOf(shutdownPc, wakeOnlyPc)))
     }
 
     @Test
-    fun `no shutdown support when there is no default or it is absent from the list`() {
-        assertFalse(DefaultDeviceRules.defaultSupportsShutdown("", listOf(shutdownPc)))
-        assertFalse(DefaultDeviceRules.defaultSupportsShutdown("ghost-pc", listOf(shutdownPc)))
+    fun `no shutdown support when there is no default`() {
+        assertEquals(false, DefaultDeviceRules.defaultSupportsShutdown("", listOf(shutdownPc)))
+    }
+
+    @Test
+    fun `unknown (null) rather than false when the default is absent from the list`() {
+        // A device missing from a fetch is the same "transient bad fetch" case resolveUpdate
+        // protects against — the caller should leave its cached flag alone, not clear it.
+        assertNull(DefaultDeviceRules.defaultSupportsShutdown("ghost-pc", listOf(shutdownPc)))
     }
 }

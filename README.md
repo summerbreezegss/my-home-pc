@@ -14,7 +14,7 @@ There are many apps already that does this features but I intend to make this mo
 
 The day-to-day experience is meant to be effortless, even though making that possible takes a bit more effort up front (sorry :p):
 
-- **MyHomePC app** is a normal app: open it, tap Wake/Restart/Shutdown, done — it detects whether you're on Local or Remote automatically, so you never have to think about which one you're on. Pick a default PC once, and you get a home-screen widget and a Quick Settings tile for one-tap Wake without even opening the app, plus a notification when it comes online.
+- **MyHomePC app** is a normal app: open it, tap Wake/Restart/Shutdown, done — it detects whether you're on Local or Remote automatically, so you never have to think about which one you're on. Pick a default PC once, and you get a home-screen widget (On to wake, Off to shut down with a confirmation) and a Quick Settings tile for one-tap Wake, without even opening the app, plus a notification when it comes online.
 - **PC Agent** (only needed for Restart/Shutdown) installs with a single double-click — no command line, no coding. See [Getting started](#getting-started) below.
 - **Docker Relay** is the one genuinely technical piece — a one-time setup, editing a couple of config files and deploying it on a Docker host (see [Getting started](#getting-started) below). It's also where the real security benefit lives: no port-forwarding, no open inbound ports, token-gated access whether you're on Wi-Fi or across the world. Once it's running, you never touch it again, and adding a second PC later is a one-line config change, not a rewrite.
 

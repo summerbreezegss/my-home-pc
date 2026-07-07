@@ -30,14 +30,18 @@ object DefaultDeviceRules {
 
     /**
      * Whether the current default device (by id) advertises the "shutdown" capability in a
-     * freshly fetched list. False when there's no default, the default isn't in the list, or
-     * it simply can't be shut down remotely — the caller caches this so the widget can hide
-     * its Off button. Kept pure and separate from [resolveUpdate] because capabilities can
-     * change without a rename, so it must be recomputed on every fetch, not only when the
-     * stored default itself changes.
+     * freshly fetched list — false when there's no default or it simply can't be shut down
+     * remotely, or null when the default isn't in the list at all. Null is deliberately not
+     * folded into false: the caller should leave any previously cached value alone in that
+     * case, the same way [resolveUpdate] leaves a missing-from-the-list default untouched
+     * rather than clearing it — device lists can come back wrong/empty on a transient relay
+     * hiccup, and flipping the widget's Off button off over one bad fetch would be worse than
+     * a stale-but-correct value. Kept pure and separate from [resolveUpdate] because
+     * capabilities can change without a rename, so it must be recomputed on every fetch, not
+     * only when the stored default itself changes.
      */
-    fun defaultSupportsShutdown(defaultId: String, devices: List<Device>): Boolean {
+    fun defaultSupportsShutdown(defaultId: String, devices: List<Device>): Boolean? {
         if (defaultId.isBlank()) return false
-        return devices.firstOrNull { it.id == defaultId }?.capabilities?.contains("shutdown") == true
+        return devices.firstOrNull { it.id == defaultId }?.capabilities?.contains("shutdown")
     }
 }
