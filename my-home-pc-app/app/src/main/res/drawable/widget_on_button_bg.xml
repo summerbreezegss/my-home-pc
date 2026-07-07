@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Translucent accent disc behind the On (Wake) icon — matches the round buttons in the
+     square remote layout. RemoteViews can't tint a background at runtime, so the colour is
+     baked in here: widget_accent (#0EA5C7) at ~22% alpha. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="#380EA5C7" />
+</shape>

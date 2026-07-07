@@ -5,15 +5,19 @@
     <string name="notification_channel_device_status">Device status</string>
 
     <!-- Home-screen widget -->
-    <string name="widget_label">Wake PC</string>
-    <string name="widget_description">Wake your default PC with one tap, or jump straight to it in the app.</string>
+    <string name="widget_label">PC Remote</string>
+    <string name="widget_description">Turn your default PC on or off from the home screen, or tap to open it in the app.</string>
     <string name="widget_no_default_title">Choose a default PC</string>
     <string name="widget_no_default_subtitle">Tap to set up</string>
     <string name="widget_subtitle_online">Online</string>
-    <string name="widget_subtitle_offline">Offline · tap to wake</string>
-    <string name="widget_subtitle_unknown">Tap to wake</string>
+    <string name="widget_subtitle_offline">Offline</string>
+    <string name="widget_subtitle_unknown">Tap to open</string>
     <string name="widget_subtitle_waking">Wake sent…</string>
     <string name="widget_open_content_description">Open in MyHomePC</string>
+    <string name="widget_on_content_description">Turn on</string>
+    <string name="widget_off_content_description">Turn off (shut down)</string>
+    <string name="widget_on_label">On</string>
+    <string name="widget_off_label">Off</string>
 
     <!-- Quick Settings tile -->
     <string name="tile_label_default">Wake PC</string>

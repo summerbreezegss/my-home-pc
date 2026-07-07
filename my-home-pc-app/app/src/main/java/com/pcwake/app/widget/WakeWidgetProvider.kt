@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 import com.pcwake.app.MainActivity
 import com.pcwake.app.R
@@ -14,16 +15,19 @@ import com.pcwake.app.data.SettingsRepository
 import com.pcwake.app.work.StatusWatch
 
 /**
- * Home-screen widget with two tap targets, both bound to the default device: the main area
- * sends a Wake without opening the app (the result arrives as a notification from
- * DeviceStatusWorker), and the trailing button opens the app straight on that device's
- * detail screen.
+ * Square home-screen remote tile with three tap targets, all bound to the default device:
+ * the header opens the app on that device's detail screen; On sends a Wake without opening
+ * the app (the result arrives as a notification from DeviceStatusWorker); Off opens the app
+ * with the Shutdown confirmation already up. Off deliberately isn't a one-tap fire — shutdown
+ * is destructive and a widget can't show its own dialog, so the confirmation lives in the app
+ * screen that already handles it. Off is hidden entirely for a device that doesn't report the
+ * "shutdown" capability (cached by SettingsRepository so this render needs no network call).
  *
  * Click behavior is baked in at render time, not decided at click time: with no default
- * device chosen yet, both targets open Settings instead — a receiver can't legally launch
- * an activity from the background on modern Android, so the "not configured" case must be
- * an activity PendingIntent from the start. Anything that changes the default device or the
- * cached status calls [updateAll] to re-render.
+ * device chosen yet, the action row is hidden and the header opens Settings instead — a
+ * receiver can't legally launch an activity from the background on modern Android, so the
+ * "not configured" case must be an activity PendingIntent from the start. Anything that
+ * changes the default device or the cached status calls [updateAll] to re-render.
  */
 class WakeWidgetProvider : AppWidgetProvider() {
 
@@ -67,9 +71,13 @@ class WakeWidgetProvider : AppWidgetProvider() {
             if (deviceId.isBlank()) {
                 views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_no_default_title))
                 views.setTextViewText(R.id.widget_subtitle, context.getString(R.string.widget_no_default_subtitle))
-                val openSettings = activityPending(context, MainActivity.ACTION_OPEN_SETTINGS)
-                views.setOnClickPendingIntent(R.id.widget_wake_zone, openSettings)
-                views.setOnClickPendingIntent(R.id.widget_open_zone, openSettings)
+                // No device to act on — hide the On/Off row and send the header to Settings.
+                views.setViewVisibility(R.id.widget_action_row, View.GONE)
+                views.setViewVisibility(R.id.widget_status_dot, View.GONE)
+                views.setOnClickPendingIntent(
+                    R.id.widget_header_zone,
+                    activityPending(context, MainActivity.ACTION_OPEN_SETTINGS)
+                )
                 return views
             }
 
@@ -86,18 +94,40 @@ class WakeWidgetProvider : AppWidgetProvider() {
             }
             views.setTextViewText(R.id.widget_subtitle, subtitle)
 
+            // Recolour the status dot to match the subtitle: amber while a wake is pending,
+            // green online, grey otherwise.
+            val dotColor = when {
+                cache.isWaking(deviceId) -> R.color.widget_status_waking
+                cache.isOnline(deviceId) == true -> R.color.widget_status_online
+                else -> R.color.widget_status_offline
+            }
+            views.setViewVisibility(R.id.widget_status_dot, View.VISIBLE)
+            views.setInt(R.id.widget_status_dot, "setColorFilter", context.getColor(dotColor))
+
+            views.setOnClickPendingIntent(
+                R.id.widget_header_zone,
+                activityPending(context, MainActivity.ACTION_OPEN_DEFAULT_DEVICE)
+            )
+
             val wakeIntent = Intent(context, WakeWidgetProvider::class.java).setAction(ACTION_WAKE)
             views.setOnClickPendingIntent(
-                R.id.widget_wake_zone,
+                R.id.widget_on_zone,
                 PendingIntent.getBroadcast(
                     context, 0, wakeIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )
-            views.setOnClickPendingIntent(
-                R.id.widget_open_zone,
-                activityPending(context, MainActivity.ACTION_OPEN_DEFAULT_DEVICE)
-            )
+
+            // Off shows only when the PC can actually be shut down remotely; otherwise it's a
+            // dead button, so hide it and let On center in the row.
+            if (repository.getDefaultDeviceShutdownSupported()) {
+                views.setOnClickPendingIntent(
+                    R.id.widget_off_zone,
+                    activityPending(context, MainActivity.ACTION_SHUTDOWN_DEFAULT_DEVICE)
+                )
+            } else {
+                views.setViewVisibility(R.id.widget_off_zone, View.GONE)
+            }
             return views
         }
 

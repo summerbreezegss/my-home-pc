@@ -115,8 +115,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     devices
                 )?.let {
                     repository.setDefaultDevice(it.id, it.name)
-                    WakeWidgetProvider.updateAll(getApplication())
                 }
+                // Keep the widget's cached "can shut down" flag current — see DeviceListViewModel.
+                repository.setDefaultDeviceShutdownSupported(
+                    DefaultDeviceRules.defaultSupportsShutdown(repository.getDefaultDeviceId(), devices)
+                )
+                WakeWidgetProvider.updateAll(getApplication())
                 _defaultDeviceId.value = repository.getDefaultDeviceId()
                 _deviceOptions.value = devices
             } catch (e: CancellationException) {
@@ -129,6 +133,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setDefaultDevice(device: Device) {
         repository.setDefaultDevice(device.id, device.name)
+        repository.setDefaultDeviceShutdownSupported(device.capabilities.contains("shutdown"))
         _defaultDeviceId.value = device.id
         WakeWidgetProvider.updateAll(getApplication())
     }

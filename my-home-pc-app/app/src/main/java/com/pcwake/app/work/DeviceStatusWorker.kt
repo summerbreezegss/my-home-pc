@@ -9,6 +9,7 @@ import com.pcwake.app.data.NetworkTrustGate
 import com.pcwake.app.data.NetworkTrustRepository
 import com.pcwake.app.data.RelayConnectionResolver
 import com.pcwake.app.data.SettingsRepository
+import com.pcwake.app.data.WifiNetworkMonitor
 import com.pcwake.app.notifications.DeviceNotifications
 import com.pcwake.app.widget.WakeWidgetProvider
 import kotlinx.coroutines.CancellationException
@@ -56,8 +57,15 @@ class DeviceStatusWorker(context: Context, params: WorkerParameters) : Coroutine
             repository.getLocalHost().isNotBlank(),
             NetworkTrustRepository(applicationContext)
         )
+        // The gate almost always resolves to "use Remote" here because the SSID is unreadable in
+        // the background (that needs foreground location). Allow Local anyway while on Wi-Fi so a
+        // Local-only setup works from the widget/tile — the widget is only ever placed once the
+        // user is already on their trusted network. The resolver still probes the unauthenticated
+        // /health first and only commits to Local if the relay answers, otherwise falls to Remote.
+        val allowLocal = trustState.allowsLocal ||
+            WifiNetworkMonitor.isConnectedToWifi(applicationContext)
         val api = try {
-            RelayConnectionResolver.resolve(repository, trustState.allowsLocal).api
+            RelayConnectionResolver.resolve(repository, allowLocal).api
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -77,6 +85,10 @@ class DeviceStatusWorker(context: Context, params: WorkerParameters) : Coroutine
         }
 
         val cache = DeviceStateCache(applicationContext)
+        // Only re-render on an actual status flip. While waking, the subtitle stays "Wake sent…"
+        // regardless of the (still off-target) polled value, so re-rendering every poll just
+        // reprints identical views — a visible flicker of the whole tile every few seconds.
+        var lastOnline = cache.isOnline(deviceId)
         repeat(POLL_MAX_ATTEMPTS) {
             delay(POLL_INTERVAL_MS)
             val online = try {
@@ -94,10 +106,13 @@ class DeviceStatusWorker(context: Context, params: WorkerParameters) : Coroutine
                     DeviceNotifications.notifyTransition(applicationContext, deviceId, deviceName, online)
                     return Result.success()
                 }
-                // Not at target yet — re-render so a real offline/online flip is reflected,
-                // but the "waking" flag (still live) keeps the widget on "Wake sent…" during
-                // a send-wake watch rather than flashing the stale pre-wake status.
-                WakeWidgetProvider.updateAll(applicationContext)
+                // Not at target yet — re-render only if the status genuinely changed, so a real
+                // offline/online flip still shows while the "waking" flag keeps the tile on
+                // "Wake sent…" without flickering on every poll.
+                if (online != lastOnline) {
+                    WakeWidgetProvider.updateAll(applicationContext)
+                    lastOnline = online
+                }
             }
         }
         // Timeout: give up silently (see class doc), but the widget/tile must stop showing

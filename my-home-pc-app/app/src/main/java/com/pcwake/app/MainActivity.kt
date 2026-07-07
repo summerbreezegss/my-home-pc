@@ -27,8 +27,15 @@ class MainActivity : ComponentActivity() {
         /** Widget/tile "not configured yet" targets — land on Settings to pick a default device. */
         const val ACTION_OPEN_SETTINGS = "com.pcwake.app.OPEN_SETTINGS"
 
-        /** Widget "Open" button — land on the default device's detail (resolved at open time). */
+        /** Widget "Open" button / header — land on the default device's detail (resolved at open time). */
         const val ACTION_OPEN_DEFAULT_DEVICE = "com.pcwake.app.OPEN_DEFAULT_DEVICE"
+
+        /**
+         * Widget "Off" button — land on the default device's detail with the Shutdown
+         * confirmation already up. Off is a deep-link, not a one-tap shutdown, so an accidental
+         * tap costs a glance and a Cancel rather than the PC.
+         */
+        const val ACTION_SHUTDOWN_DEFAULT_DEVICE = "com.pcwake.app.SHUTDOWN_DEFAULT_DEVICE"
 
         /** Status notifications — land on the specific device the notification was about. */
         const val ACTION_OPEN_DEVICE = "com.pcwake.app.OPEN_DEVICE"
@@ -76,17 +83,23 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable(
-                            "deviceDetail/{deviceId}/{deviceName}",
+                            "deviceDetail/{deviceId}/{deviceName}?promptShutdown={promptShutdown}",
                             arguments = listOf(
                                 navArgument("deviceId") { type = NavType.StringType },
-                                navArgument("deviceName") { type = NavType.StringType }
+                                navArgument("deviceName") { type = NavType.StringType },
+                                navArgument("promptShutdown") {
+                                    type = NavType.BoolType
+                                    defaultValue = false
+                                }
                             )
                         ) { backStackEntry ->
                             val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
                             val deviceName = Uri.decode(backStackEntry.arguments?.getString("deviceName") ?: "")
+                            val promptShutdown = backStackEntry.arguments?.getBoolean("promptShutdown") ?: false
                             DeviceDetailScreen(
                                 deviceId = deviceId,
                                 deviceName = deviceName,
+                                promptShutdownOnLaunch = promptShutdown,
                                 onBack = { navController.popBackStack() }
                             )
                         }
@@ -107,6 +120,17 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate("deviceDetail/$id/${Uri.encode(name)}")
                                 } else if (startDestination != "settings") {
                                     // Default was cleared/never set — the closest useful screen.
+                                    navController.navigate("settings")
+                                }
+                            }
+                            ACTION_SHUTDOWN_DEFAULT_DEVICE -> {
+                                val id = repository.getDefaultDeviceId()
+                                if (id.isNotBlank()) {
+                                    val name = repository.getDefaultDeviceName().ifBlank { id }
+                                    // Same detail screen as Open, but ask it to raise the Shutdown
+                                    // confirmation on arrival.
+                                    navController.navigate("deviceDetail/$id/${Uri.encode(name)}?promptShutdown=true")
+                                } else if (startDestination != "settings") {
                                     navController.navigate("settings")
                                 }
                             }
