@@ -27,4 +27,17 @@ object DefaultDeviceRules {
         val stored = devices.firstOrNull { it.id == currentId } ?: return null
         return if (stored.name != currentName) stored else null
     }
+
+    /**
+     * Whether the current default device (by id) advertises the "shutdown" capability in a
+     * freshly fetched list. False when there's no default, the default isn't in the list, or
+     * it simply can't be shut down remotely — the caller caches this so the widget can hide
+     * its Off button. Kept pure and separate from [resolveUpdate] because capabilities can
+     * change without a rename, so it must be recomputed on every fetch, not only when the
+     * stored default itself changes.
+     */
+    fun defaultSupportsShutdown(defaultId: String, devices: List<Device>): Boolean {
+        if (defaultId.isBlank()) return false
+        return devices.firstOrNull { it.id == defaultId }?.capabilities?.contains("shutdown") == true
+    }
 }

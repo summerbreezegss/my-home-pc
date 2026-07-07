@@ -1,7 +1,9 @@
 package com.pcwake.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultDeviceRulesTest {
@@ -46,5 +48,24 @@ class DefaultDeviceRulesTest {
         // Stored default vanished but one other device remains — switching the tile/widget to
         // a different PC silently would be a guess, exactly what the rule exists to avoid.
         assertNull(DefaultDeviceRules.resolveUpdate("office-pc", "Office PC", listOf(homePc)))
+    }
+
+    private val shutdownPc = Device(id = "office-pc", name = "Office PC", capabilities = listOf("restart", "shutdown"))
+    private val wakeOnlyPc = Device(id = "home-pc", name = "Home PC", capabilities = listOf("restart"))
+
+    @Test
+    fun `default supports shutdown when it advertises the capability`() {
+        assertTrue(DefaultDeviceRules.defaultSupportsShutdown("office-pc", listOf(shutdownPc, wakeOnlyPc)))
+    }
+
+    @Test
+    fun `default does not support shutdown without the capability`() {
+        assertFalse(DefaultDeviceRules.defaultSupportsShutdown("home-pc", listOf(shutdownPc, wakeOnlyPc)))
+    }
+
+    @Test
+    fun `no shutdown support when there is no default or it is absent from the list`() {
+        assertFalse(DefaultDeviceRules.defaultSupportsShutdown("", listOf(shutdownPc)))
+        assertFalse(DefaultDeviceRules.defaultSupportsShutdown("ghost-pc", listOf(shutdownPc)))
     }
 }

@@ -16,4 +16,10 @@
     <color name="widget_text">#FFE6F1F7</color>
     <color name="widget_text_dim">#99E6F1F7</color>
     <color name="widget_divider">#33E6F1F7</color>
+    <!-- Off/Shutdown accent — same red as the in-app Shutdown button (MaterialTheme error). -->
+    <color name="widget_danger">#FFF0645B</color>
+    <!-- Status-dot colours beside the device name. -->
+    <color name="widget_status_online">#FF4ADE80</color>
+    <color name="widget_status_waking">#FFF5A623</color>
+    <color name="widget_status_offline">#FF8296A6</color>
 </resources>

@@ -1,78 +1,128 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Two tap targets: the whole left area wakes the default device; the trailing
-     button opens the app on its detail screen. RemoteViews-compatible views only. -->
+<!-- Remote tile, sized 3 cells wide x 2 tall by default (roughly square on most home grids).
+     Three tap targets, all bound to the default device: the header opens the app on that
+     device's detail screen; On sends a Wake; Off opens the app with the Shutdown confirmation
+     already up (a widget can't show a dialog itself, and shutdown is destructive, so it
+     deliberately isn't a one-tap fire).
+
+     Content fills the box rather than clustering at the edges: a compact header up top and the
+     On/Off controls centred in the weighted space below, so it reads as a balanced tile.
+
+     RemoteViews-compatible views only (LinearLayout / FrameLayout / ImageView / TextView).
+     The Off column lives in its own container (widget_off_zone) so the provider can hide it
+     with setViewVisibility(GONE) on a PC that doesn't report the shutdown capability, leaving
+     On centred. The status dot is recoloured per status by the provider (setColorFilter). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:background="@drawable/widget_background">
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="14dp">
 
+    <!-- Header: name + status, taps through to the device's detail screen. -->
     <LinearLayout
-        android:id="@+id/widget_wake_zone"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="14dp"
-        android:paddingEnd="10dp">
+        android:id="@+id/widget_header_zone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
-        <ImageView
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:src="@drawable/ic_power"
-            android:tint="@color/widget_accent"
-            android:contentDescription="@null" />
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_text"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginStart="12dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="2dp">
 
-            <TextView
-                android:id="@+id/widget_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/widget_text"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end" />
+            <ImageView
+                android:id="@+id/widget_status_dot"
+                android:layout_width="9dp"
+                android:layout_height="9dp"
+                android:layout_marginEnd="6dp"
+                android:src="@drawable/widget_status_dot"
+                android:contentDescription="@null" />
 
             <TextView
                 android:id="@+id/widget_subtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="@color/widget_text_dim"
-                android:textSize="11sp"
+                android:textSize="13sp"
                 android:maxLines="1"
                 android:ellipsize="end" />
         </LinearLayout>
     </LinearLayout>
 
-    <!-- ImageView (not plain View) for the divider: RemoteViews' filtered inflater only
-         accepts @RemoteView-annotated classes, and android.view.View isn't one — a bare
-         <View> here fails inflation and the launcher shows "Can't add widget". -->
-    <ImageView
-        android:layout_width="1dp"
-        android:layout_height="match_parent"
-        android:layout_marginTop="10dp"
-        android:layout_marginBottom="10dp"
-        android:background="@color/widget_divider"
-        android:contentDescription="@null" />
+    <!-- Action row fills the remaining height and centres the controls, so the tile looks
+         even top-to-bottom. Hidden as a whole in the "no default device" state. -->
+    <LinearLayout
+        android:id="@+id/widget_action_row"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center">
 
-    <FrameLayout
-        android:id="@+id/widget_open_zone"
-        android:layout_width="52dp"
-        android:layout_height="match_parent">
+        <LinearLayout
+            android:id="@+id/widget_on_zone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center">
 
-        <ImageView
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_open_app"
-            android:tint="@color/widget_accent"
-            android:contentDescription="@string/widget_open_content_description" />
-    </FrameLayout>
+            <ImageView
+                android:layout_width="84dp"
+                android:layout_height="84dp"
+                android:background="@drawable/widget_on_button_bg"
+                android:padding="20dp"
+                android:src="@drawable/ic_power"
+                android:tint="@color/widget_accent"
+                android:contentDescription="@string/widget_on_content_description" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/widget_on_label"
+                android:textColor="@color/widget_accent"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_off_zone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginStart="24dp">
+
+            <ImageView
+                android:layout_width="84dp"
+                android:layout_height="84dp"
+                android:background="@drawable/widget_off_button_bg"
+                android:padding="20dp"
+                android:src="@drawable/ic_power"
+                android:tint="@color/widget_danger"
+                android:contentDescription="@string/widget_off_content_description" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/widget_off_label"
+                android:textColor="@color/widget_danger"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

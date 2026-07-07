@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,7 +89,8 @@ private sealed class DeviceActionState {
 fun DeviceDetailScreen(
     deviceId: String,
     deviceName: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    promptShutdownOnLaunch: Boolean = false
 ) {
     val context = LocalContext.current
     val repository = remember { SettingsRepository(context) }
@@ -205,6 +207,15 @@ fun DeviceDetailScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Arrived from the widget's Off button: raise the same Shutdown confirmation the button
+    // would, so the destructive action still goes through a deliberate Yes rather than firing
+    // straight off a home-screen tap. Runs once on entry; Cancel just leaves the user here.
+    LaunchedEffect(Unit) {
+        if (promptShutdownOnLaunch) {
+            pendingConfirmation = PowerAction.SHUTDOWN
+        }
     }
 
     val isBusy = actionState is DeviceActionState.Sending || actionState is DeviceActionState.Polling

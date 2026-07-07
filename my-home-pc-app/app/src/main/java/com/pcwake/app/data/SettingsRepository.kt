@@ -23,7 +23,11 @@ class SettingsRepository(context: Context) {
             .apply()
     }
 
-    fun isConfigured(): Boolean = getRemoteHost().isNotBlank() && getToken().isNotBlank()
+    // A token plus at least one host (Local or Remote) is a usable setup. Requiring Remote
+    // specifically would strand a Local-only user: the background worker (widget/tile) gates on
+    // this, so with a blank Remote it would bail before ever trying the Local host they do have.
+    fun isConfigured(): Boolean =
+        (getRemoteHost().isNotBlank() || getLocalHost().isNotBlank()) && getToken().isNotBlank()
 
     /**
      * The device the Quick Settings tile and home-screen widget act on. The name is stored
@@ -40,6 +44,19 @@ class SettingsRepository(context: Context) {
             .apply()
     }
 
+    /**
+     * Whether the default device reports the "shutdown" capability, cached so the widget can
+     * decide at render time whether to show its Off button without a network call. Refreshed
+     * from the live device list on every fetch (see [DefaultDeviceRules.defaultSupportsShutdown]).
+     * Not a secret, so it's stored in the clear; defaults to false so a device whose capability
+     * isn't known yet simply hides Off rather than offering an action that would error.
+     */
+    fun getDefaultDeviceShutdownSupported(): Boolean = prefs.getBoolean(KEY_DEFAULT_DEVICE_SHUTDOWN, false)
+
+    fun setDefaultDeviceShutdownSupported(supported: Boolean) {
+        prefs.edit().putBoolean(KEY_DEFAULT_DEVICE_SHUTDOWN, supported).apply()
+    }
+
     companion object {
         private const val PREFS_FILE = "relay_settings_v2"
         private const val KEY_LOCAL_HOST = "local_host"
@@ -48,5 +65,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOKEN = "relay_token"
         private const val KEY_DEFAULT_DEVICE_ID = "default_device_id"
         private const val KEY_DEFAULT_DEVICE_NAME = "default_device_name"
+        private const val KEY_DEFAULT_DEVICE_SHUTDOWN = "default_device_shutdown_supported"
     }
 }
