@@ -13,7 +13,6 @@
     <string name="widget_subtitle_offline">Offline</string>
     <string name="widget_subtitle_unknown">Tap to open</string>
     <string name="widget_subtitle_waking">Wake sent…</string>
-    <string name="widget_open_content_description">Open in MyHomePC</string>
     <string name="widget_on_content_description">Turn on</string>
     <string name="widget_off_content_description">Turn off (shut down)</string>
     <string name="widget_on_label">On</string>

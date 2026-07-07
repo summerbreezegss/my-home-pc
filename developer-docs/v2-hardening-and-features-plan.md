@@ -169,11 +169,10 @@ shares the same underlying watch path.
   user picks (the tile/widget show a not-configured state rather than guessing). Stored as
   `defaultDeviceId` in `SettingsRepository`; read only by the tile and widget — device list and
   detail screens are unaffected.
-- [x] **Quick Settings tile / home-screen widget** — both target the Default Device. The widget
-  has two tap targets: **Wake** fires the wake without opening the app (result arrives via the
-  item-1 notification), **Open** launches straight into that device's detail screen. The QS tile
+- [x] **Quick Settings tile / home-screen widget** — both target the Default Device. The QS tile
   is single-tap Wake only, icon state from the last-known online/offline status. With no default
-  set, both surfaces open Settings → Default Device instead.
+  set, both surfaces open Settings → Default Device instead. (The widget's own shape and tap
+  targets were reworked in Phase 5 below — see there for the current layout.)
 
 Dropped from this phase (2026-07-06):
 
@@ -181,6 +180,45 @@ Dropped from this phase (2026-07-06):
   stay as the only gate.
 - ~~**`sleep` capability**~~ — cut at scoping; would have been the only item touching all three
   components. `capabilities` gating in `devices.yaml` remains ready for it if it returns.
+
+## Phase 5 — Widget: On/Off remote tile (added 2026-07-07, out of original v2 scope)
+
+Requested after Phase 4 shipped: turn the widget into a two-way remote (wake **and** shut
+down), sized to sit alongside another home-screen widget. App-only, no relay/agent changes.
+
+**Status 2026-07-07: COMPLETE — implemented and live-verified on the S24 Ultra.**
+
+- [x] **Square remote tile** — the widget went from a 4x1 wake bar to a 3x2 tile (a 2x2
+  target rendered portrait on this device's home grid — its cells are taller than wide, same
+  footprint as other 2x2 widgets on that launcher — so 3 columns wide reads as roughly square).
+  Layout: a header (device name + status dot, taps into the device's detail screen) over
+  centered **On**/**Off** controls sized to fill the box rather than cluster at the edges.
+- [x] **Off button** — sends nothing directly. It deep-links into the app on the device's
+  detail screen with the *existing* Shutdown confirmation dialog already raised
+  (`MainActivity.ACTION_SHUTDOWN_DEFAULT_DEVICE` → `deviceDetail/{id}/{name}?promptShutdown=true`
+  → `DeviceDetailScreen` opens `pendingConfirmation` on launch). Deliberately not a one-tap
+  fire — shutdown is destructive and a widget can't show its own dialog, so the confirmation
+  step is inherited from the screen that already has one. Off is hidden entirely unless the
+  default device reports the `shutdown` capability (cached via
+  `SettingsRepository.getDefaultDeviceShutdownSupported()`, derived by the new pure
+  `DefaultDeviceRules.defaultSupportsShutdown()`, refreshed on every device-list fetch).
+- [x] **Local-only background wake fixed** — found live-testing on this Local-only (no
+  Tailscale Remote host) setup: the widget's background wake failed with "could not reach
+  relay" even though the in-app Wake worked fine. Root cause: `SettingsRepository.isConfigured()`
+  required a non-blank **Remote** host, so `DeviceStatusWorker` returned failure at its very
+  first guard before ever attempting Local — the in-app screens don't gate on `isConfigured()`,
+  which is why only the background surfaces (widget/tile) were affected. Fixed two ways: (1) a
+  token plus *either* host now counts as configured; (2) the background worker may use the
+  Local host while on Wi-Fi (`WifiNetworkMonitor.isConnectedToWifi()`), still probing the
+  unauthenticated `/health` endpoint first and only proceeding if it actually answers, else
+  falling back to Remote — the same fail-safe shape as the foreground `RelayConnectionResolver`.
+  User explicitly rejected a Settings opt-in toggle for this behavior ("the widget is only ever
+  added once the device and Wi-Fi are already trusted, it should just work") — an earlier
+  toggle-gated version was built, then fully reverted in favor of this unconditional fix.
+- [x] Minor polish from live feedback: a colored status dot next to the device name (green
+  online / amber waking / grey offline), larger On/Off controls and labels, and a fix for the
+  background poll re-rendering the whole tile on every 5-second tick during a wake watch
+  (now only re-renders on an actual online/offline flip) which had looked like a UI glitch.
 
 ## Deferred / accepted risks
 
